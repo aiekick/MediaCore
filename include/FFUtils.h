@@ -17,6 +17,8 @@ extern "C"
     #include "libavfilter/avfilter.h"
 }
 
+#include "MediaCore.h"
+
 #if LIBAVFORMAT_VERSION_MAJOR >= 59
 typedef const AVCodec*      AVCodecPtr;
 #else
@@ -27,21 +29,21 @@ extern const AVRational MILLISEC_TIMEBASE;
 extern const AVRational MICROSEC_TIMEBASE;
 extern const AVRational FF_AV_TIMEBASE;
 
-std::string MillisecToString(int64_t millisec);
-std::string TimestampToString(double timestamp);
+MEDIACORE_API std::string MillisecToString(int64_t millisec);
+MEDIACORE_API std::string TimestampToString(double timestamp);
 
-bool IsHwFrame(const AVFrame* avfrm);
-bool HwFrameToSwFrame(AVFrame* swfrm, const AVFrame* hwfrm);
+MEDIACORE_API bool IsHwFrame(const AVFrame* avfrm);
+MEDIACORE_API bool HwFrameToSwFrame(AVFrame* swfrm, const AVFrame* hwfrm);
 
 using SelfFreeAVFramePtr = std::shared_ptr<AVFrame>;
-SelfFreeAVFramePtr AllocSelfFreeAVFramePtr();
-SelfFreeAVFramePtr CloneSelfFreeAVFramePtr(const AVFrame* avfrm);
-SelfFreeAVFramePtr WrapSelfFreeAVFramePtr(AVFrame* avfrm);
+MEDIACORE_API SelfFreeAVFramePtr AllocSelfFreeAVFramePtr();
+MEDIACORE_API SelfFreeAVFramePtr CloneSelfFreeAVFramePtr(const AVFrame* avfrm);
+MEDIACORE_API SelfFreeAVFramePtr WrapSelfFreeAVFramePtr(AVFrame* avfrm);
 
-AVPixelFormat GetAVPixelFormatByName(const std::string& name);
-ImColorFormat ConvertPixelFormatToColorFormat(AVPixelFormat pixfmt);
-bool ConvertAVFrameToImMat(const AVFrame* avfrm, ImGui::ImMat& vmat, double timestamp);
-bool ConvertImMatToAVFrame(const ImGui::ImMat& vmat, AVFrame* avfrm, int64_t pts);
+MEDIACORE_API AVPixelFormat GetAVPixelFormatByName(const std::string& name);
+MEDIACORE_API ImColorFormat ConvertPixelFormatToColorFormat(AVPixelFormat pixfmt);
+MEDIACORE_API bool ConvertAVFrameToImMat(const AVFrame* avfrm, ImGui::ImMat& vmat, double timestamp);
+MEDIACORE_API bool ConvertImMatToAVFrame(const ImGui::ImMat& vmat, AVFrame* avfrm, int64_t pts);
 
 class AVFrameToImMatConverter
 {

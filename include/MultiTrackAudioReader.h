@@ -4,6 +4,7 @@
 #include "immat.h"
 #include "AudioTrack.h"
 #include "Logger.h"
+#include "MediaCore.h"
 
 struct MultiTrackAudioReader
 {
@@ -34,7 +35,7 @@ struct MultiTrackAudioReader
     virtual std::string GetError() const = 0;
 };
 
-MultiTrackAudioReader* CreateMultiTrackAudioReader();
-void ReleaseMultiTrackAudioReader(MultiTrackAudioReader** mreader);
+MEDIACORE_API MultiTrackAudioReader* CreateMultiTrackAudioReader();
+MEDIACORE_API void ReleaseMultiTrackAudioReader(MultiTrackAudioReader** mreader);
 
-Logger::ALogger* GetMultiTrackAudioReaderLogger();
+MEDIACORE_API Logger::ALogger* GetMultiTrackAudioReaderLogger();

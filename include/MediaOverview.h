@@ -2,6 +2,7 @@
 #include "immat.h"
 #include "MediaParser.h"
 #include "Logger.h"
+#include "MediaCore.h"
 
 struct MediaOverview
 {
@@ -50,7 +51,7 @@ struct MediaOverview
     virtual std::string GetError() const = 0;
 };
 
-MediaOverview* CreateMediaOverview();
-void ReleaseMediaOverview(MediaOverview** msrc);
+MEDIACORE_API MediaOverview* CreateMediaOverview();
+MEDIACORE_API void ReleaseMediaOverview(MediaOverview** msrc);
 
-Logger::ALogger* GetMediaOverviewLogger();
+MEDIACORE_API Logger::ALogger* GetMediaOverviewLogger();

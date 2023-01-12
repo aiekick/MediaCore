@@ -5,6 +5,7 @@
 #include "VideoTrack.h"
 #include "SubtitleTrack.h"
 #include "Logger.h"
+#include "MediaCore.h"
 
 struct MultiTrackVideoReader
 {
@@ -58,7 +59,7 @@ struct MultiTrackVideoReader
     }
 };
 
-MultiTrackVideoReader* CreateMultiTrackVideoReader();
-void ReleaseMultiTrackVideoReader(MultiTrackVideoReader** mreader);
+MEDIACORE_API MultiTrackVideoReader* CreateMultiTrackVideoReader();
+MEDIACORE_API void ReleaseMultiTrackVideoReader(MultiTrackVideoReader** mreader);
 
-Logger::ALogger* GetMultiTrackVideoReaderLogger();
+MEDIACORE_API Logger::ALogger* GetMultiTrackVideoReaderLogger();

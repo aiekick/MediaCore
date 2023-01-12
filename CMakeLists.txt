@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.0.0)
 project(MediaCore VERSION 0.1.0)
 
+option(MEDIACORE_STATIC              "Build MediaCore as static library" OFF)
+
 find_package(PkgConfig REQUIRED)
 
 # >>> include ffmpeg as dependency
@@ -57,9 +59,16 @@ endif(BUILD_DEPENDENCY_IMGUI)
 # >>> make MediaCore library
 set(LIB_SRC_DIR ${PROJECT_SOURCE_DIR}/src)
 
-add_library(MediaCore SHARED
-    ${LIB_SRC_DIR}/AudioClip.cpp
+if(MEDIACORE_STATIC)
+set(LIBRARY STATIC)
+else(MEDIACORE_STATIC)
+set(LIBRARY SHARED)
+add_compile_definitions(MEDIACORE_SHARED)
+endif(MEDIACORE_STATIC)
+
+add_library(MediaCore ${LIBRARY}
     ${LIB_SRC_DIR}/AudioRender_Impl_Sdl2.cpp
+    ${LIB_SRC_DIR}/AudioClip.cpp
     ${LIB_SRC_DIR}/AudioTrack.cpp
     ${LIB_SRC_DIR}/FFUtils.cpp
     ${LIB_SRC_DIR}/FontDescriptor.cpp

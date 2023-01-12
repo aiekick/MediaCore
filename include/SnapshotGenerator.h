@@ -4,6 +4,7 @@
 #include "immat.h"
 #include "MediaParser.h"
 #include "Logger.h"
+#include "MediaCore.h"
 
 struct SnapshotGenerator
 {
@@ -74,5 +75,5 @@ struct SnapshotGenerator
 };
 using SnapshotGeneratorHolder = std::shared_ptr<SnapshotGenerator>;
 
-SnapshotGeneratorHolder CreateSnapshotGenerator();
-Logger::ALogger* GetSnapshotGeneratorLogger();
+MEDIACORE_API SnapshotGeneratorHolder CreateSnapshotGenerator();
+MEDIACORE_API Logger::ALogger* GetSnapshotGeneratorLogger();

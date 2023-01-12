@@ -3,6 +3,7 @@
 #include <memory>
 #include <vector>
 #include <unordered_map>
+#include "MediaCore.h"
 
 namespace FM
 {
@@ -48,11 +49,11 @@ namespace FM
 
     using FontDescriptorHolder = std::shared_ptr<FontDescriptor>;
 
-    FontDescriptorHolder NewFontDescriptor(
+    MEDIACORE_API FontDescriptorHolder NewFontDescriptor(
         const char *path, const char *postscriptName, const char *family, const char *style,
         FontWeight weight, FontWidth width, bool italic, bool monospace);
 
-    std::vector<FontDescriptorHolder> GetAvailableFonts();
+    MEDIACORE_API std::vector<FontDescriptorHolder> GetAvailableFonts();
 
-    std::unordered_map<std::string, std::vector<FontDescriptorHolder>> GroupFontsByFamily(const std::vector<FontDescriptorHolder>& fonts);
+    MEDIACORE_API std::unordered_map<std::string, std::vector<FontDescriptorHolder>> GroupFontsByFamily(const std::vector<FontDescriptorHolder>& fonts);
 }

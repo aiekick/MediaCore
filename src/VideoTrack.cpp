@@ -1,6 +1,7 @@
 #include <sstream>
 #include <algorithm>
 #include "VideoTrack.h"
+#include "MediaCore.h"
 
 using namespace std;
 
@@ -487,7 +488,7 @@ namespace MediaCore
         m_overlaps.sort(OVERLAP_SORT_CMP);
     }
 
-    std::ostream& operator<<(std::ostream& os, VideoTrack& track)
+    MEDIACORE_API std::ostream& operator<<(std::ostream& os, VideoTrack& track)
     {
         os << "{ clips(" << track.m_clips.size() << "): [";
         auto clipIter = track.m_clips.begin();

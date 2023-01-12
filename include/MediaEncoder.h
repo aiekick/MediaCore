@@ -5,6 +5,7 @@
 #include "immat.h"
 #include "MediaInfo.h"
 #include "Logger.h"
+#include "MediaCore.h"
 
 struct MediaEncoder
 {
@@ -76,7 +77,7 @@ struct MediaEncoder
         friend std::ostream& operator<<(std::ostream& os, const EncoderDescription& encdesc);
     };
 
-    static bool FindEncoder(const std::string& codecName, std::vector<EncoderDescription>& encoderDescList);
+    MEDIACORE_API static bool FindEncoder(const std::string& codecName, std::vector<EncoderDescription>& encoderDescList);
 
     virtual bool Open(const std::string& url) = 0;
     virtual bool Close() = 0;
@@ -102,7 +103,7 @@ struct MediaEncoder
     virtual std::string GetError() const = 0;
 };
 
-MediaEncoder* CreateMediaEncoder();
-void ReleaseMediaEncoder(MediaEncoder** mencoder);
+MEDIACORE_API MediaEncoder* CreateMediaEncoder();
+MEDIACORE_API void ReleaseMediaEncoder(MediaEncoder** mencoder);
 
-Logger::ALogger* GetMediaEncoderLogger();
+MEDIACORE_API Logger::ALogger* GetMediaEncoderLogger();

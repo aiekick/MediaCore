@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <string>
+#include "MediaCore.h"
 
 struct AudioRender
 {
@@ -29,5 +30,5 @@ struct AudioRender
     virtual std::string GetError() const = 0;
 };
 
-AudioRender* CreateAudioRender();
-void ReleaseAudioRender(AudioRender** audrnd);
+MEDIACORE_API AudioRender* CreateAudioRender();
+MEDIACORE_API void ReleaseAudioRender(AudioRender** audrnd);

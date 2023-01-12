@@ -6,6 +6,7 @@
 #include "VideoClip.h"
 #include "VideoTransformFilter.h"
 #include "Logger.h"
+#include "MediaCore.h"
 
 using namespace std;
 using namespace Logger;

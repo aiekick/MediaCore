@@ -3,13 +3,14 @@
 #include <mutex>
 #include <list>
 #include "AudioClip.h"
+#include "MediaCore.h"
 
 namespace MediaCore
 {
     class AudioTrack;
     using AudioTrackHolder = std::shared_ptr<AudioTrack>;
 
-    class AudioTrack
+    class MEDIACORE_API AudioTrack
     {
     public:
         AudioTrack(int64_t id, uint32_t outChannels, uint32_t outSampleRate);

@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <ostream>
+#include "MediaCore.h"
 
 namespace Logger
 {
@@ -23,12 +24,12 @@ namespace Logger
         virtual ALogger* SetShowTime(bool show) = 0;
     };
 
-    void SetSingleLogMaxSize(uint32_t size);
+    MEDIACORE_API void SetSingleLogMaxSize(uint32_t size);
 
-    bool SetDefaultLoggerType(const std::string& loggerType);
-    ALogger* GetDefaultLogger();
-    void Log(Level l, const std::string fmt, ...);
-    std::ostream& Log(Level l);
+    MEDIACORE_API bool SetDefaultLoggerType(const std::string& loggerType);
+    MEDIACORE_API ALogger* GetDefaultLogger();
+    MEDIACORE_API void Log(Level l, const std::string fmt, ...);
+    MEDIACORE_API std::ostream& Log(Level l);
 
-    ALogger* GetLogger(const std::string& name);
+    MEDIACORE_API ALogger* GetLogger(const std::string& name);
 }

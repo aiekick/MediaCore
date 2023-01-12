@@ -2,6 +2,7 @@
 #include <memory>
 #include <atomic>
 #include "MediaReader.h"
+#include "MediaCore.h"
 
 namespace MediaCore
 {
@@ -10,7 +11,7 @@ namespace MediaCore
     struct AudioFilter;
     using AudioFilterHolder = std::shared_ptr<AudioFilter>;
 
-    struct AudioClip
+    struct MEDIACORE_API AudioClip
     {
         virtual ~AudioClip() {}
         static AudioClipHolder CreateAudioInstance(
@@ -53,7 +54,7 @@ namespace MediaCore
     struct AudioTransition;
     using AudioTransitionHolder = std::shared_ptr<AudioTransition>;
 
-    class AudioOverlap
+    class MEDIACORE_API AudioOverlap
     {
     public:
         static bool HasOverlap(AudioClipHolder hClip1, AudioClipHolder hClip2)

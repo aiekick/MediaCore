@@ -1414,7 +1414,7 @@ private:
                 tasks.clear();
             }
         }
-        return move(tasks);
+        return std::move(tasks);
     }
 
     int32_t CheckFrameSsBias(int64_t pts, uint32_t& bias)

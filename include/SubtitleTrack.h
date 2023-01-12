@@ -4,6 +4,7 @@
 #include <memory>
 #include "Logger.h"
 #include "SubtitleClip.h"
+#include "MediaCore.h"
 
 namespace MediaCore
 {
@@ -78,9 +79,9 @@ namespace MediaCore
         static SubtitleTrackHolder NewEmptyTrack(int64_t id);
     };
 
-    bool InitializeSubtitleLibrary();
-    void ReleaseSubtitleLibrary();
-    bool SetFontDir(const std::string& path);
+    MEDIACORE_API bool InitializeSubtitleLibrary();
+    MEDIACORE_API void ReleaseSubtitleLibrary();
+    MEDIACORE_API bool SetFontDir(const std::string& path);
 }
 
-Logger::ALogger* GetSubtitleTrackLogger();
+MEDIACORE_API Logger::ALogger* GetSubtitleTrackLogger();

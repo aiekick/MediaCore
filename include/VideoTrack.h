@@ -3,13 +3,14 @@
 #include <mutex>
 #include <list>
 #include "VideoClip.h"
+#include "MediaCore.h"
 
 namespace MediaCore
 {
     class VideoTrack;
     using VideoTrackHolder = std::shared_ptr<VideoTrack>;
 
-    class VideoTrack
+    class MEDIACORE_API VideoTrack
     {
     public:
         VideoTrack(int64_t id, uint32_t outWidth, uint32_t outHeight, const MediaInfo::Ratio& frameRate);
@@ -46,7 +47,7 @@ namespace MediaCore
         int64_t Duration() const { return m_duration; }
         int64_t ReadPos() const { return (int64_t)((double)m_readFrames*1000*m_frameRate.den/m_frameRate.num); }
 
-        friend std::ostream& operator<<(std::ostream& os, VideoTrack& track);
+        friend MEDIACORE_API std::ostream& operator<<(std::ostream& os, VideoTrack& track);
 
     private:
         static std::function<bool(const VideoClipHolder&, const VideoClipHolder&)> CLIP_SORT_CMP;

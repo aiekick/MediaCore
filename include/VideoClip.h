@@ -6,6 +6,7 @@
 #include <list>
 #include "immat.h"
 #include "MediaReader.h"
+#include "MediaCore.h"
 
 namespace MediaCore
 {
@@ -33,7 +34,7 @@ namespace MediaCore
     // forward declaration
     struct VideoTransformFilter;
 
-    struct VideoClip
+    struct MEDIACORE_API VideoClip
     {
         virtual ~VideoClip() {}
         static VideoClipHolder CreateVideoInstance(
@@ -89,7 +90,7 @@ namespace MediaCore
     struct VideoTransition;
     using VideoTransitionHolder = std::shared_ptr<VideoTransition>;
 
-    class VideoOverlap
+    class MEDIACORE_API VideoOverlap
     {
     public:
         static bool HasOverlap(VideoClipHolder hClip1, VideoClipHolder hClip2)
