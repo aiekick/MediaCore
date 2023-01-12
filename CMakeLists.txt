@@ -1,0 +1,141 @@
+cmake_minimum_required(VERSION 3.0.0)
+project(MediaCore VERSION 0.1.0)
+
+find_package(PkgConfig REQUIRED)
+
+# >>> include ffmpeg as dependency
+pkg_check_modules(
+    FFMPEG IMPORTED_TARGET
+    libavcodec
+    libavformat
+    libavutil
+    libswresample
+    libavfilter
+    libswscale
+    libavdevice
+)
+# <<<
+
+# >>> include libass as dependency
+pkg_check_modules(
+    LIBASS REQUIRED IMPORTED_TARGET
+    libass
+)
+# <<<
+
+# >>> include libass as dependency
+find_package(Fontconfig REQUIRED)
+# <<<
+
+# >>> include imgui as dependency (from source code)
+set(IMGUI_SRC_PATH "imgui" CACHE PATH "Path to imgui source code.")
+add_subdirectory("${IMGUI_SRC_PATH}" imgui EXCLUDE_FROM_ALL)
+set_target_properties(
+    imgui
+    PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}"
+)
+if(IMGUI_VULKAN_SHADER)
+set_target_properties(
+    VkShader
+    PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}"
+)
+endif()
+# <<<
+
+# >>> make MediaCore library
+set(LIB_SRC_DIR ${PROJECT_SOURCE_DIR}/src)
+
+add_library(MediaCore SHARED
+    ${LIB_SRC_DIR}/AudioClip.cpp
+    ${LIB_SRC_DIR}/AudioRender_Impl_Sdl2.cpp
+    ${LIB_SRC_DIR}/AudioTrack.cpp
+    ${LIB_SRC_DIR}/FFUtils.cpp
+    ${LIB_SRC_DIR}/FontDescriptor.cpp
+    ${LIB_SRC_DIR}/FontManager_Fontconfig.cpp
+    ${LIB_SRC_DIR}/Logger.cpp
+    ${LIB_SRC_DIR}/MediaEncoder.cpp
+    ${LIB_SRC_DIR}/MediaOverview.cpp
+    ${LIB_SRC_DIR}/MediaParser.cpp
+    ${LIB_SRC_DIR}/MediaReader.cpp
+    ${LIB_SRC_DIR}/MultiTrackAudioReader.cpp
+    ${LIB_SRC_DIR}/MultiTrackVideoReader.cpp
+    ${LIB_SRC_DIR}/SnapshotGenerator.cpp
+    ${LIB_SRC_DIR}/SubtitleClip_AssImpl.cpp
+    ${LIB_SRC_DIR}/SubtitleTrack_AssImpl.cpp
+    ${LIB_SRC_DIR}/SubtitleTrack.cpp
+    ${LIB_SRC_DIR}/VideoBlender.cpp
+    ${LIB_SRC_DIR}/VideoClip.cpp
+    ${LIB_SRC_DIR}/VideoTrack.cpp
+    ${LIB_SRC_DIR}/VideoTransformFilter_FFImpl.cpp
+    ${LIB_SRC_DIR}/VideoTransformFilter_VulkanImpl.cpp
+    ${LIB_SRC_DIR}/VideoTransformFilter.cpp
+)
+
+target_include_directories(MediaCore PRIVATE
+    ${LIB_SRC_DIR}
+)
+target_include_directories(MediaCore PUBLIC
+    ${PROJECT_SOURCE_DIR}/include
+    ${IMGUI_INCLUDE_DIRS}
+)
+
+target_link_libraries(MediaCore INTERFACE
+    PkgConfig::FFMPEG
+    PkgConfig::LIBASS
+    Fontconfig::Fontconfig
+    imgui
+)
+# <<<
+
+# >>> make tests
+set(BUILD_MEDIACORE_TEST ON CACHE BOOL "Choose whether or not to build the test programs of MediaCore library.")
+
+if(BUILD_MEDIACORE_TEST)
+set(LIB_TEST_DIR ${PROJECT_SOURCE_DIR}/test)
+
+add_executable(MediaEncoderTest
+    ${LIB_TEST_DIR}/MediaEncoderTest.cpp
+)
+target_link_libraries(MediaEncoderTest MediaCore)
+
+add_executable(MediaOverviewTest
+    ${LIB_TEST_DIR}/MediaOverviewTest.cpp
+    ${IMGUI_SRC_PATH}/../${IMGUI_APP_ENTRY_SRC}
+)
+target_link_libraries(MediaOverviewTest MediaCore)
+
+add_executable(MediaReaderTest
+    ${LIB_TEST_DIR}/MediaReaderTest.cpp
+    ${IMGUI_SRC_PATH}/../${IMGUI_APP_ENTRY_SRC}
+)
+target_link_libraries(MediaReaderTest MediaCore)
+
+add_executable(MediaSnapshotTest
+    ${LIB_TEST_DIR}/MediaSnapshotTest.cpp
+    ${IMGUI_SRC_PATH}/../${IMGUI_APP_ENTRY_SRC}
+)
+target_link_libraries(MediaSnapshotTest MediaCore)
+
+add_executable(MultiTrackAudioTest
+    ${LIB_TEST_DIR}/MultiTrackAudioReaderTest.cpp
+    ${IMGUI_SRC_PATH}/../${IMGUI_APP_ENTRY_SRC}
+)
+target_link_libraries(MultiTrackAudioTest MediaCore)
+
+add_executable(MultiTrackVideoTest
+    ${LIB_TEST_DIR}/MultiTrackVideoReaderTest.cpp
+    ${IMGUI_SRC_PATH}/../${IMGUI_APP_ENTRY_SRC}
+)
+target_link_libraries(MultiTrackVideoTest MediaCore)
+
+add_executable(SubtitleReaderTest
+    ${LIB_TEST_DIR}/SubtitleReaderTest.cpp
+    ${IMGUI_SRC_PATH}/../${IMGUI_APP_ENTRY_SRC}
+)
+target_link_libraries(SubtitleReaderTest MediaCore)
+endif(BUILD_MEDIACORE_TEST)
+# <<<
