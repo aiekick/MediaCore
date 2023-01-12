@@ -28,6 +28,13 @@ find_package(Fontconfig REQUIRED)
 # <<<
 
 # >>> include imgui as dependency (from source code)
+if (DEFINED BUILD_DEPENDENCY_IMGUI)
+set(BUILD_DEPENDENCY_IMGUI ${BUILD_DEPENDENCY_IMGUI} CACHE BOOL "Choose whether or not to build the dependency project 'IMGUI' from source code.")
+else()
+set(BUILD_DEPENDENCY_IMGUI ON CACHE BOOL "Choose whether or not to build the dependency project 'IMGUI' from source code.")
+endif()
+
+if(BUILD_DEPENDENCY_IMGUI)
 set(IMGUI_SRC_PATH "imgui" CACHE PATH "Path to imgui source code.")
 add_subdirectory("${IMGUI_SRC_PATH}" imgui EXCLUDE_FROM_ALL)
 set_target_properties(
@@ -43,7 +50,8 @@ set_target_properties(
     LIBRARY_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}"
     RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}"
 )
-endif()
+endif(IMGUI_VULKAN_SHADER)
+endif(BUILD_DEPENDENCY_IMGUI)
 # <<<
 
 # >>> make MediaCore library
@@ -92,7 +100,11 @@ target_link_libraries(MediaCore INTERFACE
 # <<<
 
 # >>> make tests
+if(DEFINED BUILD_MEDIACORE_TEST)
+set(BUILD_MEDIACORE_TEST ${BUILD_MEDIACORE_TEST} CACHE BOOL "Choose whether or not to build the test programs of MediaCore library.")
+else()
 set(BUILD_MEDIACORE_TEST ON CACHE BOOL "Choose whether or not to build the test programs of MediaCore library.")
+endif()
 
 if(BUILD_MEDIACORE_TEST)
 set(LIB_TEST_DIR ${PROJECT_SOURCE_DIR}/test)
