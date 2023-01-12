@@ -91,13 +91,18 @@ target_include_directories(MediaCore PUBLIC
     ${IMGUI_INCLUDE_DIRS}
 )
 
-target_link_libraries(MediaCore INTERFACE
+target_link_libraries(MediaCore PUBLIC
     PkgConfig::FFMPEG
     PkgConfig::LIBASS
     Fontconfig::Fontconfig
     imgui
 )
 # <<<
+get_directory_property(hasParent PARENT_DIRECTORY)
+if(hasParent)
+    set(MEDIACORE_LIBRARYS MediaCore PARENT_SCOPE )
+    set(MEDIACORE_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/include PARENT_SCOPE )
+endif()
 
 # >>> make tests
 if(DEFINED BUILD_MEDIACORE_TEST)
