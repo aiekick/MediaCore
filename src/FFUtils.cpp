@@ -1666,7 +1666,7 @@ MediaInfo::InfoHolder GenerateMediaInfoByAVFormatContext(const AVFormatContext* 
             audStream->timebase = MediaInfoRatioFromAVRational(stream->time_base);
 #if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
             audStream->channels = codecpar->channels;
-else
+#else
             audStream->channels = codecpar->ch_layout.nb_channels;
 #endif
             audStream->sampleRate = codecpar->sample_rate;
