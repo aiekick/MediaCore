@@ -799,13 +799,14 @@ private:
                 bool enqDone = false;
                 while (!m_quit && !enqDone)
                 {
+                    bool idleLoop2 = true;
                     if (!avpktLoaded)
                     {
                         int fferr = av_read_frame(m_avfmtCtx, &avpkt);
                         if (fferr == 0)
                         {
                             avpktLoaded = true;
-                            idleLoop = false;
+                            idleLoop = idleLoop2 = false;
                             ss.ssFrmPts = avpkt.pts;
                             auto iter2 = iter;
                             if (avpkt.stream_index == m_vidStmIdx && iter2 != m_snapshots.begin())
@@ -847,7 +848,7 @@ private:
                                 }
                                 av_packet_unref(&avpkt);
                                 avpktLoaded = false;
-                                idleLoop = false;
+                                idleLoop = idleLoop2 = false;
                                 enqDone = true;
                             }
                         }
@@ -857,6 +858,8 @@ private:
                             avpktLoaded = false;
                         }
                     }
+                    if (idleLoop2)
+                        this_thread::sleep_for(chrono::milliseconds(5));
                 }
             }
             else
@@ -893,6 +896,7 @@ private:
             // retrieve output frame
             bool hasOutput;
             do{
+                bool idleLoop2 = true;
                 if (!avfrmLoaded)
                 {
                     int fferr = avcodec_receive_frame(m_viddecCtx, &avfrm);
@@ -900,7 +904,7 @@ private:
                     {
                         // m_logger->Log(DEBUG) << "<<< Get video frame pts=" << avfrm.pts << "(" << MillisecToString(av_rescale_q(avfrm.pts, m_vidAvStm->time_base, MILLISEC_TIMEBASE)) << ")." << endl;
                         avfrmLoaded = true;
-                        idleLoop = false;
+                        idleLoop = idleLoop2 = false;
                     }
                     else if (fferr != AVERROR(EAGAIN))
                     {
@@ -908,6 +912,10 @@ private:
                         {
                             m_logger->Log(Error) << "FAILED to invoke 'avcodec_receive_frame'(VideoDecodeThreadProc)! return code is "
                                 << fferr << "." << endl;
+                        }
+                        else
+                        {
+                            m_logger->Log(VERBOSE) << "---> EOF received" << endl;
                         }
                         quitLoop = true;
                     }
@@ -923,8 +931,11 @@ private:
                     }
                     av_frame_unref(&avfrm);
                     avfrmLoaded = false;
-                    idleLoop = false;
+                    idleLoop = idleLoop2 = false;
                 }
+
+                if (idleLoop2)
+                    this_thread::sleep_for(chrono::milliseconds(5));
             } while (hasOutput && !m_quit);
             if (quitLoop)
                 break;
@@ -960,6 +971,7 @@ private:
                 }
                 else if (m_demuxVidEof)
                 {
+                    m_logger->Log(VERBOSE) << "---------------------------> send nullptr <--------------------------" << endl;
                     avcodec_send_packet(m_viddecCtx, nullptr);
                     inputEof = true;
                 }

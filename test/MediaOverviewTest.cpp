@@ -62,7 +62,9 @@ void Application_Initialize(void** handle)
     for (auto& tid : g_snapshotTids)
         tid = nullptr;
     g_movr = CreateMediaOverview();
-    g_movr->SetSnapshotSize(320, 180);
+    // g_movr->SetSnapshotSize(320, 180);
+    g_movr->EnableHwAccel(true);
+    g_movr->SetSnapshotResizeFactor(0.1, 0.1);
     // g_movr->SetSnapshotResizeFactor(0.5f, 0.5f);
     // g_movr2 = CreateMediaOverview();
     // g_movr2->SetSnapshotSize(320, 180);
