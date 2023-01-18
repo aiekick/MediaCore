@@ -239,6 +239,7 @@ public:
             return false;
         }
         lock_guard<recursive_mutex> lk(m_apiLock);
+        m_audOutSmpfmt = outPcmFormat;
         m_swrOutSmpfmt = outSmpfmt;
         m_isOutFmtPlanar = av_sample_fmt_is_planar(outSmpfmt);
 
@@ -377,6 +378,7 @@ public:
         m_audReadEof = false;
         m_audReadNextTaskSeekPts0 = INT64_MIN;
         m_swrFrmSize = 0;
+        m_outFrmSize = 0;
         m_swrOutStartTime = 0;
 
         m_prepared = false;
@@ -458,6 +460,7 @@ public:
         m_audReadEof = false;
         m_audReadNextTaskSeekPts0 = INT64_MIN;
         m_swrFrmSize = 0;
+        m_outFrmSize = 0;
         m_swrOutStartTime = 0;
 
         m_prepared = false;
@@ -698,6 +701,42 @@ public:
         return success;
     }
 
+    bool ReadAudioSamples(ImGui::ImMat& m, uint32_t& numSamples, double& pos, bool& eof, bool wait) override
+    {
+        if (numSamples == 0) numSamples = 1024;
+        int outCh{0};
+#if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
+        outCh = m_swrOutChannels;
+#else
+        outCh = m_swrOutChlyt.nb_channels;
+#endif
+        uint32_t outFrmSize = GetAudioOutFrameSize();
+        size_t elemSize = (size_t)(outFrmSize/outCh);
+        m.create((int)numSamples, (int)1, outCh, elemSize);
+        if (!m.data)
+        {
+            ostringstream oss;
+            oss << "FAILED to allocate buffer for audio Mat! numSamples=" << numSamples << ", outCh=" << outCh << ", elemSize=" << elemSize << ".";
+            m_errMsg = oss.str();
+            return false;
+        }
+        uint32_t matBufSize = m.w*m.c*m.elemsize;
+        uint32_t readSize = matBufSize;
+        bool ret = ReadAudioSamples((uint8_t*)m.data, readSize, pos, eof, wait);
+        if (ret)
+        {
+            m.time_stamp = pos;
+            m.elempack = m_isOutFmtPlanar ? 1 : outCh;
+            m.rate.num = m_swrOutSampleRate;
+            m.rate.den = 1;
+            m.flags |= IM_MAT_FLAGS_AUDIO_FRAME;
+            if (readSize < matBufSize)
+                m.w = readSize/outFrmSize;
+            numSamples = m.w;
+        }
+        return ret;
+    }
+
     uint32_t Id() const override
     {
         return m_id;
@@ -786,6 +825,11 @@ public:
         return h;
     }
 
+    string GetAudioOutPcmFormat() const override
+    {
+        return m_audOutSmpfmt;
+    }
+
     uint32_t GetAudioOutChannels() const override
     {
         const MediaInfo::AudioStream* audStream = GetAudioStream();
@@ -811,14 +855,13 @@ public:
         const MediaInfo::AudioStream* audStream = GetAudioStream();
         if (!audStream)
             return 0;
-        uint32_t frameSize = m_swrPassThrough ? m_audFrmSize : m_swrFrmSize;
-        if (frameSize > 0 || !m_started)
-            return frameSize;
+
+        if (m_outFrmSize > 0 || !m_started)
+            return m_outFrmSize;
 
         while (!m_quitThread && !m_prepared)
             this_thread::sleep_for(chrono::milliseconds(5));
-        frameSize = m_swrPassThrough ? m_audFrmSize : m_swrFrmSize;
-        return frameSize;
+        return m_outFrmSize;
     }
 
     bool IsHwAccelEnabled() const override
@@ -1027,6 +1070,7 @@ private:
 
             if (!OpenAudioDecoder())
                 return false;
+            m_outFrmSize = m_swrPassThrough ? m_audFrmSize : m_swrFrmSize;
         }
 
         if (m_seekPosUpdated)
@@ -3244,6 +3288,7 @@ private:
     AVCodecContext* m_auddecCtx{nullptr};
     bool m_swrPassThrough{false};
     SwrContext* m_swrCtx{nullptr};
+    string m_audOutSmpfmt;
     AVSampleFormat m_swrOutSmpfmt{AV_SAMPLE_FMT_FLT};
     int m_swrOutSampleRate{0};
 #if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
@@ -3255,6 +3300,7 @@ private:
     AVRational m_swrOutTimebase;
     int64_t m_swrOutStartTime;
     uint32_t m_swrFrmSize{0};
+    uint32_t m_outFrmSize{0};
     bool m_isOutFmtPlanar{false};
 
     // demuxing thread

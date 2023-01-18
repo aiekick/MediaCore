@@ -478,49 +478,11 @@ private:
             const MediaInfo::Ratio& frameRate, uint64_t bitRate,
             vector<Option>* extraOpts)
     {
-        m_videnc = avcodec_find_encoder_by_name(codecName.c_str());
-        if (!m_videnc)
-        {
-            const AVCodecDescriptor* desc = avcodec_descriptor_get_by_name(codecName.c_str());
-            AVCodecPtr best = nullptr;
-            if (desc)
-            {
-                void* i = 0;
-                AVCodecPtr p;
-                while ((p = (AVCodecPtr)av_codec_iterate(&i)))
-                {
-                    if (p->id != desc->id)
-                        continue;
-                    if (!av_codec_is_encoder(p))
-                        continue;
-                    if ((p->capabilities&AV_CODEC_CAP_EXPERIMENTAL) != 0)
-                        continue;
-                    best = p;
-                    if (!m_vidPreferUseHw || (p->capabilities&AV_CODEC_CAP_HARDWARE) != 0)
-                        break;
-                }
-            }
-            m_videnc = best;
-        }
-        if (!m_videnc)
-        {
-            ostringstream oss;
-            oss << "Can NOT find encoder by name '" << codecName << "'!";
-            m_errMsg = oss.str();
-            return false;
-        }
-        else if (m_videnc->type != AVMEDIA_TYPE_VIDEO)
-        {
-            ostringstream oss;
-            oss << "Codec name '" << codecName << "' is NOT for an VIDEO encoder!";
-            m_errMsg = oss.str();
-            return false;
-        }
-
+        AVPixelFormat requiredInputPixfmt = AV_PIX_FMT_NONE;
         if (!imageFormat.empty())
         {
-            m_videncPixfmt = av_get_pix_fmt(imageFormat.c_str());
-            if (m_videncPixfmt < 0)
+            requiredInputPixfmt = av_get_pix_fmt(imageFormat.c_str());
+            if (requiredInputPixfmt == AV_PIX_FMT_NONE)
             {
                 ostringstream oss;
                 oss << "INVALID image format '" << imageFormat << "'!";
@@ -528,55 +490,143 @@ private:
                 return false;
             }
         }
+
+        AVCodecContext* pTempVidencCtx = nullptr;
+        AVBufferRef* pTempHwDevCtx = nullptr;
+        m_videnc = avcodec_find_encoder_by_name(codecName.c_str());
+        if (m_videnc)
+        {
+            if (!OpenVideoEncoder(m_videnc, &pTempVidencCtx, &pTempHwDevCtx, width, height, frameRate, bitRate, extraOpts, requiredInputPixfmt))
+            {
+                if (pTempVidencCtx)
+                {
+                    avcodec_free_context(&pTempVidencCtx);
+                    pTempVidencCtx = nullptr;
+                }
+                if (pTempHwDevCtx)
+                {
+                    av_buffer_unref(&pTempHwDevCtx);
+                    pTempHwDevCtx = nullptr;
+                }
+            }
+        }
         else
         {
-            if (m_videnc->pix_fmts)
-                m_videncPixfmt = m_videnc->pix_fmts[0];
-            else
-                m_videncPixfmt = AV_PIX_FMT_YUV420P;
-        }
-
-        m_videncCtx = avcodec_alloc_context3(m_videnc);
-        if (!m_videncCtx)
-        {
-            m_errMsg = "FAILED to allocate AVCodecContext by 'avcodec_alloc_context3'!";
-            return false;
-        }
-
-        int fferr;
-        if (m_vidPreferUseHw)
-        {
-            for (int i = 0; ; i++)
+            AVCodecContext* pSwVidencCtx = nullptr;
+            AVCodecContext* pHwVidencCtx = nullptr;
+            AVBufferRef* pHwDevCtx = nullptr;
+            const AVCodecDescriptor* desc = avcodec_descriptor_get_by_name(codecName.c_str());
+            if (desc)
             {
-                const AVCodecHWConfig* config = avcodec_get_hw_config(m_videnc, i);
-                if (!config)
+                void* i = 0;
+                AVCodecPtr p;
+                while ((p = (AVCodecPtr)av_codec_iterate(&i)))
                 {
-                    ostringstream oss;
-                    oss << "Encoder '" << m_videnc->name << "' does NOT support hardware acceleration.";
-                    m_errMsg = oss.str();
-                    return false;
-                }
-                if ((config->methods&AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) != 0)
-                {
-                    if (m_vidUseHwType == AV_HWDEVICE_TYPE_NONE || m_vidUseHwType == config->device_type)
+                    if (p->id != desc->id || p->type != AVMEDIA_TYPE_VIDEO ||
+                        !av_codec_is_encoder(p) || (p->capabilities&AV_CODEC_CAP_EXPERIMENTAL))
+                        continue;
+                    if (p->capabilities&AV_CODEC_CAP_HARDWARE)
                     {
-                        if (config->pix_fmt != AV_PIX_FMT_NONE)
-                            m_videncPixfmt = config->pix_fmt;
-                        m_viddecDevType = config->device_type;
+                        if (!pHwVidencCtx)
+                        {
+                            if (OpenVideoEncoder(p, &pTempVidencCtx, &pTempHwDevCtx, width, height, frameRate, bitRate, extraOpts, requiredInputPixfmt))
+                            {
+                                pHwVidencCtx = pTempVidencCtx;
+                                pHwDevCtx = pTempHwDevCtx;
+                            }
+                            else
+                            {
+                                if (pTempVidencCtx)
+                                {
+                                    avcodec_free_context(&pTempVidencCtx);
+                                    pTempVidencCtx = nullptr;
+                                }
+                                if (pTempHwDevCtx)
+                                {
+                                    av_buffer_unref(&pTempHwDevCtx);
+                                    pTempHwDevCtx = nullptr;
+                                }
+                            }
+                        }
+                    }
+                    else if (!pSwVidencCtx)
+                    {
+                        if (OpenVideoEncoder(p, &pTempVidencCtx, nullptr, width, height, frameRate, bitRate, extraOpts, requiredInputPixfmt))
+                        {
+                            pSwVidencCtx = pTempVidencCtx;
+                        }
+                        else
+                        {
+                            if (pTempVidencCtx)
+                            {
+                                avcodec_free_context(&pTempVidencCtx);
+                                pTempVidencCtx = nullptr;
+                            }
+                        }
+                    }
+
+                    bool encoderChosen = false;
+                    if (m_vidPreferUseHw && pHwVidencCtx)
+                    {
+                        pTempVidencCtx = pHwVidencCtx;
+                        pTempHwDevCtx = pHwDevCtx;
+                        encoderChosen = true;
+                    }
+                    else if (!m_vidPreferUseHw && pSwVidencCtx)
+                    {
+                        pTempVidencCtx = pSwVidencCtx;
+                        pTempHwDevCtx = nullptr;
+                        encoderChosen = true;
+                    }
+                    if (encoderChosen)
                         break;
+                }
+                if (!pTempVidencCtx)
+                {
+                    if (pHwVidencCtx)
+                    {
+                        pTempVidencCtx = pHwVidencCtx;
+                        pTempHwDevCtx = pHwDevCtx;
+                    }
+                    else if (pSwVidencCtx)
+                    {
+                        pTempVidencCtx = pSwVidencCtx;
+                    }
+                }
+                // free unused encoder context
+                if (pHwVidencCtx && pHwVidencCtx != pTempVidencCtx)
+                {
+                    if (pHwVidencCtx)
+                    {
+                        avcodec_free_context(&pHwVidencCtx);
+                        pHwVidencCtx = nullptr;
+                    }
+                    if (pHwDevCtx)
+                    {
+                        av_buffer_unref(&pHwDevCtx);
+                        pHwDevCtx = nullptr;
+                    }
+                }
+                if (pSwVidencCtx && pSwVidencCtx != pTempVidencCtx)
+                {
+                    if (pSwVidencCtx)
+                    {
+                        avcodec_free_context(&pSwVidencCtx);
+                        pSwVidencCtx = nullptr;
                     }
                 }
             }
-            m_logger->Log(DEBUG) << "Use hardware device type '" << av_hwdevice_get_type_name(m_viddecDevType) << "'." << endl;
-
-            fferr = av_hwdevice_ctx_create(&m_videncHwDevCtx, m_viddecDevType, nullptr, nullptr, 0);
-            if (fferr < 0)
-            {
-                m_errMsg = FFapiFailureMessage("av_hwdevice_ctx_create", fferr);
-                return false;
-            }
-            m_videncCtx->hw_device_ctx = av_buffer_ref(m_videncHwDevCtx);
         }
+        if (!pTempVidencCtx)
+        {
+            ostringstream oss;
+            oss << "NO encoder can be found from hint '" << codecName << "'!";
+            m_errMsg = oss.str();
+            return false;
+        }
+        m_videncCtx = pTempVidencCtx;
+        m_videncHwDevCtx = pTempHwDevCtx;
+        m_videncPixfmt = m_videncCtx->pix_fmt;
 
         if (!m_imgCvter.SetOutSize(width, height))
         {
@@ -593,34 +643,6 @@ private:
             m_errMsg = oss.str();
             return false;
         }
-
-        m_videncCtx->pix_fmt = m_videncPixfmt;
-        m_videncCtx->width = width;
-        m_videncCtx->height = height;
-        m_videncCtx->time_base = { frameRate.den, frameRate.num };
-        m_videncCtx->framerate = { frameRate.num, frameRate.den };
-        m_videncCtx->bit_rate = bitRate;
-        m_videncCtx->sample_aspect_ratio = { 1, 1 };
-
-        AVDictionary *encOpts = nullptr;
-        if (extraOpts)
-        {
-            for (auto& extopt : *extraOpts)
-            {
-                ostringstream oss;
-                oss << extopt.value;
-                string optval = oss.str();
-                av_dict_set(&encOpts, extopt.name.c_str(), optval.c_str(), 0);
-            }
-        }
-
-        fferr = avcodec_open2(m_videncCtx, m_videnc, &encOpts);
-        if (fferr < 0)
-        {
-            m_errMsg = FFapiFailureMessage("avcodec_open2", fferr);
-            return false;
-        }
-        m_logger->Log(DEBUG) << "Video encoder '" << m_videnc->name << "' is opened." << endl;
 
         m_vmatQMaxSize = (uint32_t)(((double)m_videncCtx->framerate.num/m_videncCtx->framerate.den)*m_dataQCacheDur);
 
@@ -640,6 +662,124 @@ private:
         return true;
     }
 
+    bool OpenVideoEncoder(AVCodecPtr videnc, AVCodecContext** ppVidencCtx, AVBufferRef** ppHwDevCtx,
+            uint32_t width, uint32_t height, const MediaInfo::Ratio& frameRate, uint64_t bitRate,
+            vector<Option>* extraOpts, AVPixelFormat requiredInputPixfmt)
+    {
+        if (ppHwDevCtx) *ppHwDevCtx = nullptr;
+        *ppVidencCtx = nullptr;
+
+        AVPixelFormat videncPixfmt = AV_PIX_FMT_NONE;
+        if (videnc->pix_fmts)
+        {
+            if (requiredInputPixfmt == AV_PIX_FMT_NONE)
+                videncPixfmt = videnc->pix_fmts[0];
+            else
+            {
+                bool isFmtSupport = false;
+                for (int i = 0; ; i++)
+                {
+                    if (videnc->pix_fmts[i] == AV_PIX_FMT_NONE)
+                        break;
+                    else if (videnc->pix_fmts[i] == requiredInputPixfmt)
+                    {
+                        isFmtSupport = true;
+                        break;
+                    }
+                }
+                if (isFmtSupport)
+                    videncPixfmt = requiredInputPixfmt;
+                else
+                {
+                    ostringstream oss;
+                    oss << "Required input pixel-format '" << av_get_pix_fmt_name(requiredInputPixfmt) << "' is NOT SUPPORTED by encoder '"
+                        << videnc->name << "'!";
+                    m_errMsg = oss.str();
+                    m_logger->Log(DEBUG) << m_errMsg << endl;
+                    return false;
+                }
+            }
+        }
+        if (videncPixfmt == AV_PIX_FMT_NONE)
+            videncPixfmt = requiredInputPixfmt!=AV_PIX_FMT_NONE ? requiredInputPixfmt : AV_PIX_FMT_YUV420P;
+
+        *ppVidencCtx = avcodec_alloc_context3(videnc);
+        if (!(*ppVidencCtx))
+        {
+            m_errMsg = "FAILED to allocate AVCodecContext by 'avcodec_alloc_context3'!";
+            return false;
+        }
+
+        int fferr;
+        if (videnc->capabilities&AV_CODEC_CAP_HARDWARE)
+        {
+            const AVCodecHWConfig* config = nullptr;
+            for (int i = 0; ; i++)
+            {
+                config = avcodec_get_hw_config(videnc, i);
+                if (!config)
+                {
+                    ostringstream oss;
+                    oss << "Encoder '" << videnc->name << "' has NO MORE hardware configuration! End index is " << i << ".";
+                    m_errMsg = oss.str();
+                    m_logger->Log(DEBUG) << m_errMsg << endl;
+                    return false;
+                }
+                m_logger->Log(DEBUG) << "Checking encoder '" << videnc->name << "' hw_config[" << i << "] : methods=" << config->methods
+                    << ", device_type=" << av_hwdevice_get_type_name(config->device_type) << ", pix_fmt=" << av_get_pix_fmt_name(config->pix_fmt) << "." << endl;
+                if (config->methods&AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX)
+                {
+                    if (m_vidUseHwType != AV_HWDEVICE_TYPE_NONE && m_vidUseHwType != config->device_type)
+                        m_logger->Log(DEBUG) << "Will NOT use encoder '" << videnc->name << "' because this encoder has hardware type '"
+                            << av_hwdevice_get_type_name(config->device_type) << "', but configuration is set to use '" << av_hwdevice_get_type_name(m_vidUseHwType)
+                            << "' ONLY." << endl;
+                    else
+                        break;
+                }
+            }
+            fferr = av_hwdevice_ctx_create(ppHwDevCtx, config->device_type, nullptr, nullptr, 0);
+            if (fferr < 0)
+            {
+                m_errMsg = FFapiFailureMessage("av_hwdevice_ctx_create", fferr);
+                m_logger->Log(DEBUG) << m_errMsg << endl;
+                return false;
+            }
+            (*ppVidencCtx)->hw_device_ctx = av_buffer_ref(*ppHwDevCtx);
+            // if (config->pix_fmt != AV_PIX_FMT_NONE)
+            //     videncPixfmt = config->pix_fmt;
+        }
+
+        (*ppVidencCtx)->pix_fmt = videncPixfmt;
+        (*ppVidencCtx)->width = width;
+        (*ppVidencCtx)->height = height;
+        (*ppVidencCtx)->time_base = { frameRate.den, frameRate.num };
+        (*ppVidencCtx)->framerate = { frameRate.num, frameRate.den };
+        (*ppVidencCtx)->bit_rate = bitRate;
+        (*ppVidencCtx)->sample_aspect_ratio = { 1, 1 };
+
+        AVDictionary *encOpts = nullptr;
+        if (extraOpts)
+        {
+            for (auto& extopt : *extraOpts)
+            {
+                ostringstream oss;
+                oss << extopt.value;
+                string optval = oss.str();
+                av_dict_set(&encOpts, extopt.name.c_str(), optval.c_str(), 0);
+            }
+        }
+
+        fferr = avcodec_open2(*ppVidencCtx, videnc, &encOpts);
+        if (fferr < 0)
+        {
+            m_errMsg = FFapiFailureMessage("avcodec_open2", fferr);
+            m_logger->Log(DEBUG) << "During opening encoder '" << videnc->name << "'. " << m_errMsg << endl;
+            return false;
+        }
+        m_logger->Log(DEBUG) << "Successfully opened video encoder '" << videnc->name << "'." << endl;
+        return true;
+    }
+
     void CloseVideoComponents()
     {
         if (m_videncCtx)
@@ -653,7 +793,6 @@ private:
             av_buffer_unref(&m_videncHwDevCtx);
             m_videncHwDevCtx = nullptr;
         }
-        m_viddecDevType = AV_HWDEVICE_TYPE_NONE;
         m_videncPixfmt = AV_PIX_FMT_NONE;
         m_vidAvStm = nullptr;
         m_vidStmIdx = -1;
@@ -1096,7 +1235,6 @@ private:
     mutex m_videncLock;
     AVBufferRef* m_videncHwDevCtx{nullptr};
     AVHWDeviceType m_vidUseHwType{AV_HWDEVICE_TYPE_NONE};
-    AVHWDeviceType m_viddecDevType{AV_HWDEVICE_TYPE_NONE};
     AVPixelFormat m_videncPixfmt{AV_PIX_FMT_NONE};
     AVCodecContext* m_audencCtx{nullptr};
     mutex m_audencLock;

@@ -219,7 +219,7 @@ namespace MediaCore
             amat.elempack = m_srcReader->IsPlanar() ? 1 : channels;
             amat.rate.num = sampleRate;
             amat.rate.den = 1;
-            amat.flags &= IM_MAT_FLAGS_AUDIO_FRAME;
+            amat.flags |= IM_MAT_FLAGS_AUDIO_FRAME;
             const bool isForward = m_srcReader->IsDirectionForward();
             if (isForward)
                 m_readSamples += readSamples;

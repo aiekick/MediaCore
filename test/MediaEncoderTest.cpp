@@ -33,20 +33,20 @@ int main(int argc, const char* argv[])
     GetDefaultLogger()->SetShowLevels(DEBUG);
     GetMediaEncoderLogger()->SetShowLevels(DEBUG);
 
-    string codecHint = "hevc";
-    vector<MediaEncoder::EncoderDescription> encoderDescList;
-    MediaEncoder::FindEncoder(codecHint, encoderDescList);
-    Log(DEBUG) << "Results for searching codec hint '" << codecHint << "':" << endl;
-    if (encoderDescList.empty())
-        Log(DEBUG) << "NO ENCODER IS FOUND." << endl;
-    else
-    {
-        for (int i = 0; i < encoderDescList.size(); i++)
-        {
-            auto& encdesc = encoderDescList[i];
-            Log(DEBUG) << "[" << i << "] " << encdesc << endl;
-        }
-    }
+    // string codecHint = "hevc";
+    // vector<MediaEncoder::EncoderDescription> encoderDescList;
+    // MediaEncoder::FindEncoder(codecHint, encoderDescList);
+    // Log(DEBUG) << "Results for searching codec hint '" << codecHint << "':" << endl;
+    // if (encoderDescList.empty())
+    //     Log(DEBUG) << "NO ENCODER IS FOUND." << endl;
+    // else
+    // {
+    //     for (int i = 0; i < encoderDescList.size(); i++)
+    //     {
+    //         auto& encdesc = encoderDescList[i];
+    //         Log(DEBUG) << "[" << i << "] " << encdesc << endl;
+    //     }
+    // }
 
     string vidEncCodec = "h264";
     uint32_t outWidth{1920}, outHeight{1080};
@@ -54,7 +54,7 @@ int main(int argc, const char* argv[])
     uint64_t outVidBitRate = 10*1000*1000;
     string audEncCodec = "aac";
     uint32_t outAudChannels = 2;
-    uint32_t outSampleRate = 48000;
+    uint32_t outSampleRate = 44100;
     uint64_t outAudBitRate = 128*1000;
     double maxEncodeDuration = 60;
     bool videoOnly{false}, audioOnly{false};
@@ -69,6 +69,8 @@ int main(int argc, const char* argv[])
 
     MediaHandlers mhandlers;
     MediaReader *vidreader{nullptr}, *audreader{nullptr};
+    string audioPcmFormat;
+    uint32_t audioBlockAlign{0};
     if (hParser->GetBestVideoStreamIndex() >= 0 && !audioOnly)
     {
         mhandlers.vidreader = vidreader = CreateMediaReader();
@@ -92,11 +94,13 @@ int main(int argc, const char* argv[])
             Log(Error) << "FAILED to open audio MediaReader! Error is '" << audreader->GetError() << "'." << endl;
             return -4;
         }
-        if (!audreader->ConfigAudioReader(outAudChannels, outSampleRate))
+        if (!audreader->ConfigAudioReader(outAudChannels, outSampleRate, "flt"))
         {
             Log(Error) << "FAILED to configure audio MediaReader! Error is '" << audreader->GetError() << "'." << endl;
             return -5;
         }
+        audioPcmFormat = audreader->GetAudioOutPcmFormat();
+        audioBlockAlign = audreader->GetAudioOutFrameSize();
         audreader->Start();
     }
 
@@ -109,8 +113,8 @@ int main(int argc, const char* argv[])
     }
 
     vector<MediaEncoder::Option> extraOpts = {
-        { "profile",                { MediaEncoder::Option::OPVT_STRING, {}, "baseline" } },
-        { "aspect",                 { MediaEncoder::Option::OPVT_STRING, {}, "4:3" } },
+        { "profile",                { MediaEncoder::Option::OPVT_STRING, {}, "high" } },
+        // { "aspect",                 { MediaEncoder::Option::OPVT_STRING, {}, "1:1" } },
     };
     string vidEncImgFormat;
     if (vidreader && !mencoder->ConfigureVideoStream(vidEncCodec, vidEncImgFormat, outWidth, outHeight, outFrameRate, outVidBitRate, &extraOpts))
@@ -130,9 +134,7 @@ int main(int argc, const char* argv[])
     bool audInputEof = audreader ? false : true;
     double audpos = 0, vidpos = 0;
     uint32_t vidFrameCount = 0;
-    ImGui::ImMat vmat;
-    uint32_t pcmbufSize = 8192;
-    uint8_t* pcmbuf = new uint8_t[pcmbufSize];
+    ImGui::ImMat vmat, amat;
     while (!vidInputEof || !audInputEof)
     {
         if ((!vidInputEof && vidpos <= audpos) || audInputEof)
@@ -170,8 +172,8 @@ int main(int argc, const char* argv[])
         else
         {
             bool eof;
-            uint32_t readSize = pcmbufSize;
-            if (!audreader->ReadAudioSamples(pcmbuf, readSize, audpos, eof) && !eof)
+            uint32_t readSamples = 0;
+            if (!audreader->ReadAudioSamples(amat, readSamples, audpos, eof) && !eof)
             {
                 Log(Error) << "FAILED to read audio samples! Error is '" << audreader->GetError() << "'." << endl;
                 break;
@@ -180,7 +182,7 @@ int main(int argc, const char* argv[])
                 eof = true;
             if (!eof)
             {
-                if (!mencoder->EncodeAudioSamples(pcmbuf, readSize))
+                if (!mencoder->EncodeAudioSamples(amat))
                 {
                     Log(Error) << "FAILED to encode audio samples! Error is '" << mencoder->GetError() << "'." << endl;
                     break;
@@ -188,6 +190,7 @@ int main(int argc, const char* argv[])
             }
             else
             {
+                amat.release();
                 if (!mencoder->EncodeAudioSamples(nullptr, 0))
                 {
                     Log(Error) << "FAILED to encode audio EOF! Error is '" << mencoder->GetError() << "'." << endl;
@@ -197,7 +200,6 @@ int main(int argc, const char* argv[])
             }
         }
     }
-    delete [] pcmbuf;
     mencoder->FinishEncoding();
     mencoder->Close();
 

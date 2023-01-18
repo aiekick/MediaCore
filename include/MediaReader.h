@@ -24,6 +24,7 @@ struct MediaReader
 
     virtual bool ReadVideoFrame(double pos, ImGui::ImMat& m, bool& eof, bool wait = true) = 0;
     virtual bool ReadAudioSamples(uint8_t* buf, uint32_t& size, double& pos, bool& eof, bool wait = true) = 0;
+    virtual bool ReadAudioSamples(ImGui::ImMat& m, uint32_t& numSamples, double& pos, bool& eof, bool wait = true) = 0;
 
     virtual uint32_t Id() const = 0;
     virtual bool IsOpened() const = 0;
@@ -42,6 +43,7 @@ struct MediaReader
     virtual const MediaInfo::AudioStream* GetAudioStream() const = 0;
     virtual uint32_t GetVideoOutWidth() const = 0;
     virtual uint32_t GetVideoOutHeight() const = 0;
+    virtual std::string GetAudioOutPcmFormat() const = 0;
     virtual uint32_t GetAudioOutChannels() const = 0;
     virtual uint32_t GetAudioOutSampleRate() const = 0;
     virtual uint32_t GetAudioOutFrameSize() const = 0;
