@@ -491,12 +491,15 @@ private:
             }
         }
 
+        const bool bGlobalHeader = (m_avfmtCtx->oformat->flags&AVFMT_GLOBALHEADER) != 0;
         AVCodecContext* pTempVidencCtx = nullptr;
         AVBufferRef* pTempHwDevCtx = nullptr;
         m_videnc = avcodec_find_encoder_by_name(codecName.c_str());
         if (m_videnc)
         {
-            if (!OpenVideoEncoder(m_videnc, &pTempVidencCtx, &pTempHwDevCtx, width, height, frameRate, bitRate, extraOpts, requiredInputPixfmt))
+            if (!OpenVideoEncoder(m_videnc, &pTempVidencCtx, &pTempHwDevCtx,
+                    width, height, frameRate, bitRate, extraOpts,
+                    requiredInputPixfmt, bGlobalHeader))
             {
                 if (pTempVidencCtx)
                 {
@@ -529,7 +532,9 @@ private:
                     {
                         if (!pHwVidencCtx)
                         {
-                            if (OpenVideoEncoder(p, &pTempVidencCtx, &pTempHwDevCtx, width, height, frameRate, bitRate, extraOpts, requiredInputPixfmt))
+                            if (OpenVideoEncoder(p, &pTempVidencCtx, &pTempHwDevCtx,
+                                    width, height, frameRate, bitRate, extraOpts,
+                                    requiredInputPixfmt, bGlobalHeader))
                             {
                                 pHwVidencCtx = pTempVidencCtx;
                                 pHwDevCtx = pTempHwDevCtx;
@@ -551,7 +556,9 @@ private:
                     }
                     else if (!pSwVidencCtx)
                     {
-                        if (OpenVideoEncoder(p, &pTempVidencCtx, nullptr, width, height, frameRate, bitRate, extraOpts, requiredInputPixfmt))
+                        if (OpenVideoEncoder(p, &pTempVidencCtx, nullptr,
+                                width, height, frameRate, bitRate, extraOpts,
+                                requiredInputPixfmt, bGlobalHeader))
                         {
                             pSwVidencCtx = pTempVidencCtx;
                         }
@@ -627,6 +634,9 @@ private:
         m_videncCtx = pTempVidencCtx;
         m_videncHwDevCtx = pTempHwDevCtx;
         m_videncPixfmt = m_videncCtx->pix_fmt;
+        m_videnc = m_videncCtx->codec;
+        m_logger->Log(DEBUG) << "Choose to use video encoder '" << m_videnc->name << "'." << endl;
+        m_logger->Log(DEBUG) << "Choose to use encoding pixel-format '" << av_get_pix_fmt_name(m_videncPixfmt) << "'." << endl;
 
         if (!m_imgCvter.SetOutSize(width, height))
         {
@@ -653,8 +663,6 @@ private:
             return false;
         }
         m_vidAvStm->id = m_avfmtCtx->nb_streams-1;
-        if ((m_avfmtCtx->oformat->flags&AVFMT_GLOBALHEADER) != 0)
-            m_videncCtx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER; 
         m_vidAvStm->time_base = m_videncCtx->time_base;
         m_vidAvStm->avg_frame_rate = m_videncCtx->framerate;
         avcodec_parameters_from_context(m_vidAvStm->codecpar, m_videncCtx);
@@ -664,7 +672,7 @@ private:
 
     bool OpenVideoEncoder(AVCodecPtr videnc, AVCodecContext** ppVidencCtx, AVBufferRef** ppHwDevCtx,
             uint32_t width, uint32_t height, const MediaInfo::Ratio& frameRate, uint64_t bitRate,
-            vector<Option>* extraOpts, AVPixelFormat requiredInputPixfmt)
+            vector<Option>* extraOpts, AVPixelFormat requiredInputPixfmt, bool bGlobalHeader)
     {
         if (ppHwDevCtx) *ppHwDevCtx = nullptr;
         *ppVidencCtx = nullptr;
@@ -785,6 +793,8 @@ private:
             }
         }
 
+        if (bGlobalHeader)
+            (*ppVidencCtx)->flags |= AV_CODEC_FLAG_GLOBAL_HEADER; 
         fferr = avcodec_open2(*ppVidencCtx, videnc, &encOpts);
         if (fferr < 0)
         {
