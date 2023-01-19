@@ -673,7 +673,23 @@ private:
         if (videnc->pix_fmts)
         {
             if (requiredInputPixfmt == AV_PIX_FMT_NONE)
-                videncPixfmt = videnc->pix_fmts[0];
+            {
+                bool isHwEncoder = (videnc->capabilities&AV_CODEC_CAP_HARDWARE) != 0;
+                for (int i = 0; ; i++)
+                {
+                    AVPixelFormat pixfmt = videnc->pix_fmts[i];
+                    if (pixfmt == AV_PIX_FMT_NONE)
+                        break;
+                    const AVPixFmtDescriptor* pixdesc = av_pix_fmt_desc_get(pixfmt);
+                    if (!pixdesc)
+                        continue;
+                    bool isHwPixfmt = (pixdesc->flags&AV_PIX_FMT_FLAG_HWACCEL) != 0;
+                    if (!isHwEncoder && isHwPixfmt)
+                        continue;
+                    videncPixfmt = pixfmt;
+                    break;
+                }
+            }
             else
             {
                 bool isFmtSupport = false;
