@@ -634,7 +634,7 @@ private:
         m_videncCtx = pTempVidencCtx;
         m_videncHwDevCtx = pTempHwDevCtx;
         m_videncPixfmt = m_videncCtx->pix_fmt;
-        m_videnc = m_videncCtx->codec;
+        m_videnc = (AVCodec *)m_videncCtx->codec;
         m_logger->Log(DEBUG) << "Choose to use video encoder '" << m_videnc->name << "'." << endl;
         m_logger->Log(DEBUG) << "Choose to use encoding pixel-format '" << av_get_pix_fmt_name(m_videncPixfmt) << "'." << endl;
 
