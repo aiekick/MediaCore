@@ -308,7 +308,13 @@ public:
     {
         if (!HasAudio())
             return 0;
-        return m_audAvStm->codecpar->channels;
+        int ch;
+#if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
+        ch = m_audAvStm->codecpar->channels;
+#else
+        ch = m_audAvStm->codecpar->ch_layout.nb_channels;
+#endif
+        return ch >= 0 ? (uint32_t)ch : 0;
     }
 
     uint32_t GetAudioSampleRate() const override
@@ -1351,7 +1357,11 @@ private:
                         chMaxWf = -1.f; chMinWf = 1.f;
                     }
                 }
+#if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
                 float* ch2ptr = dstfrm->channels > 1 && wf2 ? (float*)dstfrm->data[1] : nullptr;
+#else
+                float* ch2ptr = dstfrm->ch_layout.nb_channels > 1 && wf2 ? (float*)dstfrm->data[1] : nullptr;
+#endif
                 if (ch2ptr)
                 {
                     chMaxWf = -1.f; chMinWf = 1.f;
