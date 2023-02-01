@@ -147,8 +147,8 @@ namespace MediaCore
             float alpha_11 = cos(_angle) * _y_scale;
             float beta_01 = sin(_angle) * _x_scale;
             float beta_10 = sin(_angle) * _y_scale;
-            float x_diff = m_outWidth - m_inWidth;
-            float y_diff = m_outHeight - m_inHeight;
+            float x_diff = (float)m_outWidth - (float)m_inWidth;
+            float y_diff = (float)m_outHeight - (float)m_inHeight;
             float _x_diff = (m_outWidth + m_inWidth * m_realScaleRatioH) / 2.f;
             float _y_diff = (m_outHeight + m_inHeight * m_realScaleRatioV) / 2.f;
             float x_offset = (float)m_posOffsetH / (float)m_outWidth;
