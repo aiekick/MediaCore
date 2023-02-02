@@ -64,6 +64,8 @@ public:
         m_hParser = hParser;
 
         m_opened = true;
+        m_logger->Log(INFO) << "Create SnapshotGenerator for file '" << hParser->GetUrl() << "'. Output image resolution=" <<
+            m_frmCvt.GetOutWidth() << "x" << m_frmCvt.GetOutHeight() << "." << endl;
         return true;
     }
 
@@ -88,6 +90,8 @@ public:
         m_hParser = hParser;
 
         m_opened = true;
+        m_logger->Log(INFO) << "Create SnapshotGenerator for file '" << hParser->GetUrl() << "'. Output image resolution=" <<
+            m_frmCvt.GetOutWidth() << "x" << m_frmCvt.GetOutHeight() << "." << endl;
         return true;
     }
 
@@ -243,7 +247,6 @@ public:
             m_errMsg = "Argument 'frameCount' must be greater than 1!";
             return false;
         }
-        m_logger->Log(VERBOSE) << "---------------------------- Config snap window -----------------------------" << endl;
         double minWndSize = CalcMinWindowSize(frameCount);
         if (windowSize < minWndSize)
             windowSize = minWndSize;
@@ -274,7 +277,7 @@ public:
 
         StartAllThreads();
 
-        m_logger->Log(VERBOSE) << ">>>> Config window: m_snapWindowSize=" << m_snapWindowSize << ", m_wndFrmCnt=" << m_wndFrmCnt
+        m_logger->Log(DEBUG) << ">>>> Config window: m_snapWindowSize=" << m_snapWindowSize << ", m_wndFrmCnt=" << m_wndFrmCnt
             << ", m_vidMaxIndex=" << m_vidMaxIndex << ", m_maxCacheSize=" << m_maxCacheSize << ", m_prevWndCacheSize=" << m_prevWndCacheSize << endl;
         return true;
     }
@@ -604,6 +607,8 @@ private:
             }
             else if (!OpenVideoDecoder())
                 return false;
+            m_logger->Log(INFO) << "SnapshotGenerator for file '" << m_hParser->GetUrl() << "' opened video decoder '" << 
+                m_viddecCtx->codec->name << "'(" << (m_viddecDevType==AV_HWDEVICE_TYPE_NONE ? "SW" : av_hwdevice_get_type_name(m_viddecDevType)) << ")." << endl;
 
             CalcWindowVariables();
             ResetGopDecodeTaskList();
@@ -795,7 +800,7 @@ private:
                                 demuxEof = true;
                             else if (ptsAfterSeek != seekPts0)
                             {
-                                m_logger->Log(WARN) << "'ptsAfterSeek'(" << ptsAfterSeek << ") != 'ssTask->startPts'(" << seekPts0 << ")!" << endl;
+                                m_logger->Log(VERBOSE) << "'ptsAfterSeek'(" << ptsAfterSeek << ") != 'ssTask->startPts'(" << seekPts0 << ")!" << endl;
                             }
                         }
                     }
