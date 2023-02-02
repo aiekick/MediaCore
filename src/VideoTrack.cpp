@@ -35,9 +35,6 @@ namespace MediaCore
             auto newClip = clip->Clone(outWidth, outHeight, frameRate);
             newInstance->m_clips.push_back(newClip);
             newClip->SetTrackId(m_id);
-            auto filter = clip->GetFilter();
-            if (filter)
-                newClip->SetFilter(filter->Clone());
             VideoClipHolder lastClip = newInstance->m_clips.back();
             newInstance->m_duration = lastClip->Start()+lastClip->Duration();
             newInstance->UpdateClipOverlap(newClip);

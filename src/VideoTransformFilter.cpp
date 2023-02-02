@@ -5,6 +5,8 @@
 #include "VideoTransformFilter_VulkanImpl.h"
 #endif
 
+using namespace std;
+
 namespace MediaCore
 {
     class VideoTransformFilter_Delegate : public VideoTransformFilter
@@ -22,19 +24,28 @@ namespace MediaCore
 #endif
         }
 
-        const std::string GetFilterName() const override
+        const string GetFilterName() const override
         {
             return m_filter->GetFilterName();
         }
 
-        VideoFilterHolder Clone() override
+        VideoTransformFilterHolder Clone(uint32_t outWidth, uint32_t outHeight) override
         {
-            return m_filter->Clone();
-        }
-
-        void ApplyTo(VideoClip* clip) override
-        {
-            m_filter->ApplyTo(clip);
+            VideoTransformFilterHolder newInstance = CreateVideoTransformFilter();
+            if (!newInstance->Initialize(outWidth, outHeight))
+                return nullptr;
+            newInstance->SetScaleType(GetScaleType());
+            newInstance->SetScaleH(GetScaleH());
+            newInstance->SetScaleV(GetScaleV());
+            newInstance->SetPositionOffsetH(GetPositionOffsetH());
+            newInstance->SetPositionOffsetV(GetPositionOffsetV());
+            newInstance->SetRotationAngle(GetRotationAngle());
+            newInstance->SetCropMarginL(GetCropMarginL());
+            newInstance->SetCropMarginT(GetCropMarginT());
+            newInstance->SetCropMarginR(GetCropMarginR());
+            newInstance->SetCropMarginB(GetCropMarginB());
+            newInstance->SetKeyPoint(*GetKeyPoint());
+            return newInstance;
         }
 
         ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) override
@@ -47,7 +58,7 @@ namespace MediaCore
             return m_filter->Initialize(outWidth, outHeight);
         }
 
-        bool SetOutputFormat(const std::string& outputFormat) override
+        bool SetOutputFormat(const string& outputFormat) override
         {
             return m_filter->SetOutputFormat(outputFormat);
         }
@@ -137,7 +148,7 @@ namespace MediaCore
             return m_filter->GetOutHeight();
         }
 
-        std::string GetOutputFormat() const override
+        string GetOutputFormat() const override
         {
             return m_filter->GetOutputFormat();
         }
@@ -197,7 +208,7 @@ namespace MediaCore
             return m_filter->GetKeyPoint();
         }
 
-        std::string GetError() const override
+        string GetError() const override
         {
             return m_filter->GetError();
         }
@@ -211,8 +222,8 @@ namespace MediaCore
 #endif
     };
 
-    VideoTransformFilter* NewVideoTransformFilter()
+    VideoTransformFilterHolder CreateVideoTransformFilter()
     {
-        return new VideoTransformFilter_Delegate();
+        return VideoTransformFilterHolder(new VideoTransformFilter_Delegate());
     }
 }

@@ -7,6 +7,7 @@
 #include "immat.h"
 #include "MediaReader.h"
 #include "MediaCore.h"
+#include "VideoTransformFilter.h"
 
 namespace MediaCore
 {
@@ -71,7 +72,7 @@ namespace MediaCore
         virtual void SetDirection(bool forward) = 0;
         virtual void SetFilter(VideoFilterHolder filter) = 0;
         virtual VideoFilterHolder GetFilter() const = 0;
-        virtual VideoTransformFilter* GetTransformFilterPtr() = 0;
+        virtual VideoTransformFilterHolder GetTransformFilter() = 0;
 
         static bool USE_HWACCEL;
 

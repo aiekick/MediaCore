@@ -165,8 +165,6 @@ namespace MediaCore
             m_affineMat.at<float>(2, 1) = beta_10 * center_x + (1 - alpha_11) * center_y - _y_offset;
             m_needUpdateScaleParam = m_needUpdateRotateParam = m_needUpdatePositionParam = false;
             UpdatePassThrough();
-            // m_cropperX = ((int32_t)m_inWidth-(int32_t)m_outWidth)/2;
-            // m_cropperY = ((int32_t)m_inHeight-(int32_t)m_outHeight)/2;
         }
         if (m_needUpdateCropParam)
         {
@@ -193,25 +191,6 @@ namespace MediaCore
             vkmat.flags = inMat.flags;
             outMat = vkmat;
         }
-
-        // if (m_cropperX != 0 || m_cropperY != 0 || m_inWidth != m_outWidth || m_inHeight != m_outHeight)
-        // {
-        //     ImGui::VkMat vkmat;
-        //     vkmat.type = IM_DT_INT8;
-        //     vkmat.w = m_outWidth;
-        //     vkmat.h = m_outHeight;
-        //     int srcX = m_cropperX>=0 ? m_cropperX : 0;
-        //     int srcY = m_cropperY>=0 ? m_cropperY : 0;
-        //     int srcW = srcX+m_outWidth>m_inWidth ? (int)m_inWidth-srcX : m_outWidth;
-        //     int srcH = srcY+m_outHeight>m_inHeight ? (int)m_inHeight-srcY : m_outHeight;
-        //     int dstX = m_cropperX>=0 ? 0 : -m_cropperX;
-        //     int dstY = m_cropperY>=0 ? 0 : -m_cropperY;
-        //     m_cropper.cropto(outMat, vkmat, srcX, srcY, srcW, srcH, dstX, dstY);
-        //     vkmat.time_stamp = outMat.time_stamp;
-        //     vkmat.rate = outMat.rate;
-        //     vkmat.flags = outMat.flags;
-        //     outMat = vkmat;
-        // }
         return true;
     }
 

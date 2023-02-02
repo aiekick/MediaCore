@@ -193,12 +193,6 @@ namespace MediaCore
             return true;
         }
 
-        void ApplyTo(VideoClip* clip) override
-        {}
-
-        VideoFilterHolder Clone() override
-        { return nullptr; }
-
         std::string GetError() const override
         { return m_errMsg; }
 

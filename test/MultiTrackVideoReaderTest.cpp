@@ -303,7 +303,7 @@ bool Application_Frame(void * handle, bool app_will_quit)
         {
             VideoTrackHolder hTrack = g_mtVidReader->GetTrackByIndex(s_clipOpTrackSelIdx);
             selectedClip = hTrack->GetClipByIndex(s_clipOpClipSelIdx);
-            fftransFilter = selectedClip->GetTransformFilterPtr();
+            fftransFilter = selectedClip->GetTransformFilter();
         }
         ImGui::BeginDisabled(!fftransFilter);
         int sldintMaxValue = selectedClip ? selectedClip->SrcWidth() : 0;

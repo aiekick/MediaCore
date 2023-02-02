@@ -63,7 +63,7 @@ namespace MediaCore
             bool suspend = readpos < -m_wakeupRange || readpos > Duration()+m_wakeupRange;
             if (!m_srcReader->Start(suspend))
                 throw runtime_error(m_srcReader->GetError());
-            m_transFilter = NewVideoTransformFilter();
+            m_transFilter = CreateVideoTransformFilter();
             if (!m_transFilter->Initialize(outWidth, outHeight))
                 throw runtime_error(m_transFilter->GetError());
         }
@@ -72,15 +72,15 @@ namespace MediaCore
         {
             m_frameCache.clear();
             ReleaseMediaReader(&m_srcReader);
-            delete m_transFilter;
-            m_transFilter = nullptr;
         }
 
         VideoClipHolder Clone(uint32_t outWidth, uint32_t outHeight, const MediaInfo::Ratio& frameRate) const override
         {
-            VideoClipHolder newInstance = VideoClipHolder(new VideoClip_VideoImpl(
-                m_id, m_srcReader->GetMediaParser(), outWidth, outHeight, frameRate, m_start, m_startOffset, m_endOffset, 0));
-            return newInstance;
+            VideoClip_VideoImpl* newInstance = new VideoClip_VideoImpl(
+                m_id, m_srcReader->GetMediaParser(), outWidth, outHeight, frameRate, m_start, m_startOffset, m_endOffset, 0);
+            newInstance->SetFilter(m_filter->Clone());
+            newInstance->m_transFilter = m_transFilter->Clone(outWidth, outHeight);
+            return VideoClipHolder(newInstance);
         }
 
         MediaParserHolder GetMediaParser() const override
@@ -307,7 +307,7 @@ namespace MediaCore
             return m_filter;
         }
 
-        VideoTransformFilter* GetTransformFilterPtr() override
+        VideoTransformFilterHolder GetTransformFilter() override
         {
             return m_transFilter;
         }
@@ -325,7 +325,7 @@ namespace MediaCore
         MediaInfo::Ratio m_frameRate;
         uint32_t m_frameIndex{0};
         VideoFilterHolder m_filter;
-        VideoTransformFilter* m_transFilter{nullptr};
+        VideoTransformFilterHolder m_transFilter;
         int64_t m_wakeupRange{1000};
         std::list<ImGui::ImMat> m_frameCache;
         uint32_t m_frameCacheSize{4};
@@ -356,7 +356,7 @@ namespace MediaCore
             m_start = start;
             if (!m_srcReader->Start())
                 throw runtime_error(m_srcReader->GetError());
-            m_transFilter = NewVideoTransformFilter();
+            m_transFilter = CreateVideoTransformFilter();
             if (!m_transFilter->Initialize(outWidth, outHeight))
                 throw runtime_error(m_transFilter->GetError());
         }
@@ -364,15 +364,15 @@ namespace MediaCore
         ~VideoClip_ImageImpl()
         {
             ReleaseMediaReader(&m_srcReader);
-            delete m_transFilter;
-            m_transFilter = nullptr;
         }
 
         VideoClipHolder Clone(uint32_t outWidth, uint32_t outHeight, const MediaInfo::Ratio& frameRate) const override
         {
-            VideoClipHolder newInstance = VideoClipHolder(new VideoClip_ImageImpl(
-                m_id, m_srcReader->GetMediaParser(), outWidth, outHeight, m_start, m_srcDuration));
-            return newInstance;
+            VideoClip_ImageImpl* newInstance = new VideoClip_ImageImpl(
+                m_id, m_srcReader->GetMediaParser(), outWidth, outHeight, m_start, m_srcDuration);
+            newInstance->SetFilter(m_filter->Clone());
+            newInstance->m_transFilter = m_transFilter->Clone(outWidth, outHeight);
+            return VideoClipHolder(newInstance);
         }
 
         MediaParserHolder GetMediaParser() const override
@@ -509,7 +509,7 @@ namespace MediaCore
             return m_filter;
         }
 
-        VideoTransformFilter* GetTransformFilterPtr() override
+        VideoTransformFilterHolder GetTransformFilter() override
         {
             return m_transFilter;
         }
@@ -522,7 +522,7 @@ namespace MediaCore
         int64_t m_srcDuration;
         int64_t m_start;
         VideoFilterHolder m_filter;
-        VideoTransformFilter* m_transFilter{nullptr};
+        VideoTransformFilterHolder m_transFilter;
     };
 
     VideoClipHolder VideoClip::CreateVideoInstance(

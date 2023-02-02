@@ -1,5 +1,6 @@
 #pragma once
-#include "VideoClip.h"
+#include <string>
+#include <memory>
 #include "imgui_extra_widget.h"
 #include "imgui_curve.h"
 
@@ -13,9 +14,13 @@ namespace MediaCore
         SCALE_TYPE__STRETCH,
     };
 
-    struct VideoTransformFilter : public VideoFilter
+    struct VideoTransformFilter;
+    using VideoTransformFilterHolder = std::shared_ptr<VideoTransformFilter>;
+
+    struct VideoTransformFilter
     {
         virtual bool Initialize(uint32_t outWidth, uint32_t outHeight) = 0;
+        virtual VideoTransformFilterHolder Clone(uint32_t outWidth, uint32_t outHeight) = 0;
         virtual bool SetOutputFormat(const std::string& outputFormat) = 0;
         virtual bool SetScaleType(ScaleType type) = 0;
         virtual bool SetPositionOffset(int32_t offsetH, int32_t offsetV) = 0;
@@ -30,7 +35,9 @@ namespace MediaCore
         virtual bool SetScaleH(double scale) = 0;
         virtual bool SetScaleV(double scale) = 0;
         virtual bool SetKeyPoint(ImGui::KeyPointEditor &keypoint) = 0;
+        virtual ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) = 0;
 
+        virtual const std::string GetFilterName() const = 0;
         virtual std::string GetOutputFormat() const = 0;
         virtual uint32_t GetInWidth() const = 0;
         virtual uint32_t GetInHeight() const = 0;
@@ -51,5 +58,5 @@ namespace MediaCore
         virtual std::string GetError() const = 0;
     };
 
-    VideoTransformFilter* NewVideoTransformFilter();
+    VideoTransformFilterHolder CreateVideoTransformFilter();
 }
