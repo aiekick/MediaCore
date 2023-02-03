@@ -370,7 +370,8 @@ namespace MediaCore
         {
             VideoClip_ImageImpl* newInstance = new VideoClip_ImageImpl(
                 m_id, m_srcReader->GetMediaParser(), outWidth, outHeight, m_start, m_srcDuration);
-            newInstance->SetFilter(m_filter->Clone());
+            if (m_filter)
+                newInstance->SetFilter(m_filter->Clone());
             newInstance->m_transFilter = m_transFilter->Clone(outWidth, outHeight);
             return VideoClipHolder(newInstance);
         }
