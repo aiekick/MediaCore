@@ -169,6 +169,11 @@ void Application_Finalize(void** handle)
 #endif
 }
 
+void Application_DropFromSystem(std::vector<std::string>& drops)
+{
+
+}
+
 static uint32_t s_addClipOptSelIdx = 0;
 static double s_addClipStart = 0;
 static double s_addClipStartOffset = 0;
