@@ -1396,7 +1396,7 @@ private:
             if (bestfrmIter->ownfrm)
             {
                 if (!m_frmCvt.ConvertImage(bestfrmIter->ownfrm.get(), m, bestfrmIter->ts))
-                    m_logger->Log(Error) << "FAILED to convert AVFrame to ImGui::ImMat! Message is '" << m_frmCvt.GetError() << "'." << endl;
+                    m_logger->Log(Error) << "FAILED to convert AVFrame to ImGui::ImMat for '" << m_hParser->GetUrl() << "' @pos " << ts << "sec! Error is '" << m_frmCvt.GetError() << "'." << endl;
             }
             else
                 m.time_stamp = bestfrmIter->ts;

@@ -81,13 +81,13 @@ ImColorFormat ConvertPixelFormatToColorFormat(AVPixelFormat pixfmt)
     else if (pixfmt == AV_PIX_FMT_RGBA || pixfmt == AV_PIX_FMT_RGB0 || pixfmt == AV_PIX_FMT_RGBA64)
         clrfmt = IM_CF_ABGR;
     else if (pixfmt == AV_PIX_FMT_YUV420P || pixfmt == AV_PIX_FMT_YUV420P10 || pixfmt == AV_PIX_FMT_YUV420P12 ||
-        pixfmt == AV_PIX_FMT_YUV420P14 || pixfmt == AV_PIX_FMT_YUV420P16)
+        pixfmt == AV_PIX_FMT_YUV420P14 || pixfmt == AV_PIX_FMT_YUV420P16 || pixfmt == AV_PIX_FMT_YUVJ420P)
         clrfmt = IM_CF_YUV420;
     else if (pixfmt == AV_PIX_FMT_YUV422P || pixfmt == AV_PIX_FMT_YUV422P10 || pixfmt == AV_PIX_FMT_YUV422P12 ||
-        pixfmt == AV_PIX_FMT_YUV422P14 || pixfmt == AV_PIX_FMT_YUV422P16)
+        pixfmt == AV_PIX_FMT_YUV422P14 || pixfmt == AV_PIX_FMT_YUV422P16 || pixfmt == AV_PIX_FMT_YUVJ422P)
         clrfmt = IM_CF_YUV422;
     else if (pixfmt == AV_PIX_FMT_YUV444P || pixfmt == AV_PIX_FMT_YUV444P10 || pixfmt == AV_PIX_FMT_YUV444P12 ||
-        pixfmt == AV_PIX_FMT_YUV444P14 || pixfmt == AV_PIX_FMT_YUV444P16)
+        pixfmt == AV_PIX_FMT_YUV444P14 || pixfmt == AV_PIX_FMT_YUV444P16 || pixfmt == AV_PIX_FMT_YUVJ444P)
         clrfmt = IM_CF_YUV444;
     else if (pixfmt == AV_PIX_FMT_YUVA444P || pixfmt == AV_PIX_FMT_YUVA444P10 || pixfmt == AV_PIX_FMT_YUV444P12 ||
         pixfmt == AV_PIX_FMT_YUVA444P16)
