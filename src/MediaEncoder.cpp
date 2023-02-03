@@ -638,7 +638,7 @@ private:
         m_logger->Log(DEBUG) << "Choose to use video encoder '" << m_videnc->name << "'." << endl;
         m_logger->Log(DEBUG) << "Choose to use encoding pixel-format '" << av_get_pix_fmt_name(m_videncPixfmt) << "'." << endl;
 
-        m_imgCvter.SetUseVulkanConverter(false);
+        m_imgCvter.SetUseVulkanConverter(true);
         if (!m_imgCvter.SetOutSize(width, height))
         {
             ostringstream oss;
