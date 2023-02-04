@@ -78,7 +78,7 @@ namespace MediaCore
         {
             VideoClip_VideoImpl* newInstance = new VideoClip_VideoImpl(
                 m_id, m_srcReader->GetMediaParser(), outWidth, outHeight, frameRate, m_start, m_startOffset, m_endOffset, 0);
-            newInstance->SetFilter(m_filter->Clone());
+            if (m_filter) newInstance->SetFilter(m_filter->Clone());
             newInstance->m_transFilter = m_transFilter->Clone(outWidth, outHeight);
             return VideoClipHolder(newInstance);
         }
@@ -370,8 +370,7 @@ namespace MediaCore
         {
             VideoClip_ImageImpl* newInstance = new VideoClip_ImageImpl(
                 m_id, m_srcReader->GetMediaParser(), outWidth, outHeight, m_start, m_srcDuration);
-            if (m_filter)
-                newInstance->SetFilter(m_filter->Clone());
+            if (m_filter) newInstance->SetFilter(m_filter->Clone());
             newInstance->m_transFilter = m_transFilter->Clone(outWidth, outHeight);
             return VideoClipHolder(newInstance);
         }
