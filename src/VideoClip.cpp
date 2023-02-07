@@ -17,8 +17,11 @@ namespace MediaCore
 
     ostream& operator<<(ostream& os, VideoClip& clip)
     {
-        os << "{'id':" << clip.Id() << ", 'start':" << clip.Start()
-            << ", 'soff':" << clip.StartOffset() << ", 'eoff':" << clip.EndOffset() << "}";
+        if (clip.IsImage())
+            os << "(I){'id':" << clip.Id() << ", 'start':" << clip.Start() << ", 'dur':" << clip.Duration() << "}";
+        else
+            os << "(V){'id':" << clip.Id() << ", 'start':" << clip.Start() << ", 'dur':" << clip.Duration()
+                << ", 'soff':" << clip.StartOffset() << ", 'eoff':" << clip.EndOffset() << "}";
         return os;
     }
 
