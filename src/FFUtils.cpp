@@ -1615,6 +1615,7 @@ static bool _OpenHwVideoDecoder(AVCodecPtr codec, const AVCodecParameters *codec
 {
     int fferr;
     AVCodecContext* hwDecCtx = nullptr;
+    AVHWDeviceType hwDevType = AV_HWDEVICE_TYPE_NONE;
     for (int i = 0; ; i++)
     {
         const AVCodecHWConfig* config = avcodec_get_hw_config(codec, i);
@@ -1637,6 +1638,7 @@ static bool _OpenHwVideoDecoder(AVCodecPtr codec, const AVCodecParameters *codec
             }
             hwDecCtx->get_format = _VideoDecoderCallback_GetFormat;
             AVBufferRef* devCtx = nullptr;
+            hwDevType = config->device_type;
             fferr = av_hwdevice_ctx_create(&devCtx, config->device_type, nullptr, nullptr, 0);
             if (fferr < 0)
             {
@@ -1666,6 +1668,7 @@ static bool _OpenHwVideoDecoder(AVCodecPtr codec, const AVCodecParameters *codec
     }
 
     result->decCtx = hwDecCtx;
+    result->hwDevType = hwDevType;
     return true;
 }
 

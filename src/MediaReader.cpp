@@ -1009,6 +1009,9 @@ private:
             if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &opts, &res))
             {
                 m_viddecCtx = res.decCtx;
+                AVHWDeviceType hwDevType = res.hwDevType;
+                m_logger->Log(INFO) << "Opened video decoder '" << 
+                    m_viddecCtx->codec->name << "'(" << (hwDevType==AV_HWDEVICE_TYPE_NONE ? "SW" : av_hwdevice_get_type_name(hwDevType)) << ")." << endl;
             }
             else
             {

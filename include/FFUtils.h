@@ -211,6 +211,7 @@ struct OpenVideoDecoderOptions
 struct OpenVideoDecoderResult
 {
     AVCodecContext* decCtx{nullptr};
+    AVHWDeviceType hwDevType{AV_HWDEVICE_TYPE_NONE};
     SelfFreeAVFramePtr probeFrame;
     std::string errMsg;
 };
