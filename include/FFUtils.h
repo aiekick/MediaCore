@@ -205,7 +205,7 @@ struct OpenVideoDecoderOptions
 {
     bool onlyUseSoftwareDecoder{false};
     AVHWDeviceType useHardwareType{AV_HWDEVICE_TYPE_NONE};
-    bool preferHwOutputPixfmt{false};
+    bool preferHwOutputPixfmt{true};
     AVPixelFormat useHwOutputPixfmt{AV_PIX_FMT_NONE};
     AVPixelFormat forceOutputPixfmt{AV_PIX_FMT_NONE};
 };

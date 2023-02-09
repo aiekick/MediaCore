@@ -22,8 +22,6 @@ extern "C"
 using namespace std;
 using namespace Logger;
 
-static AVPixelFormat get_hw_format(AVCodecContext *ctx, const AVPixelFormat *pix_fmts);
-
 class MediaOverview_Impl : public MediaOverview
 {
 public:
@@ -339,11 +337,6 @@ public:
         return m_errMsg;
     }
 
-    bool CheckHwPixFmt(AVPixelFormat pixfmt)
-    {
-        return pixfmt == m_vidHwPixFmt;
-    }
-
 private:
     struct Snapshot
     {
@@ -460,10 +453,9 @@ private:
         {
             m_vidAvStm = m_avfmtCtx->streams[m_vidStmIdx];
 
-            FFUtils::OpenVideoDecoderOptions opts;
-            opts.onlyUseSoftwareDecoder = !m_vidPreferUseHw;
+            m_viddecOpenOpts.onlyUseSoftwareDecoder = !m_vidPreferUseHw;
             FFUtils::OpenVideoDecoderResult res;
-            if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &opts, &res))
+            if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &m_viddecOpenOpts, &res))
             {
                 m_viddecCtx = res.decCtx;
                 openVideoFailed = false;
@@ -1441,6 +1433,7 @@ private:
     bool m_decodeVideo{false};
     bool m_decodeAudio{false};
     AVCodecPtr m_auddec{nullptr};
+    FFUtils::OpenVideoDecoderOptions m_viddecOpenOpts;
     AVCodecContext* m_viddecCtx{nullptr};
     AVCodecContext* m_auddecCtx{nullptr};
     AVPixelFormat m_vidHwPixFmt{AV_PIX_FMT_NONE};
@@ -1525,25 +1518,6 @@ ALogger* GetMediaOverviewLogger()
     if (!MediaOverview_Impl::s_logger)
         MediaOverview_Impl::s_logger = GetLogger("MOverview");
     return MediaOverview_Impl::s_logger;
-}
-
-static AVPixelFormat get_hw_format(AVCodecContext *ctx, const AVPixelFormat *pix_fmts)
-{
-    MediaOverview_Impl* mo = reinterpret_cast<MediaOverview_Impl*>(ctx->opaque);
-    const AVPixelFormat *p;
-    AVPixelFormat candidateSwfmt = AV_PIX_FMT_NONE;
-    for (p = pix_fmts; *p != AV_PIX_FMT_NONE; p++) {
-        const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(*p);
-        if (!(desc->flags & AV_PIX_FMT_FLAG_HWACCEL) && candidateSwfmt == AV_PIX_FMT_NONE)
-        {
-            // save this software format as candidate
-            candidateSwfmt = *p;
-        }
-        if (mo->CheckHwPixFmt(*p))
-            return *p;
-    }
-    return candidateSwfmt;
-    return AV_PIX_FMT_NONE;
 }
 
 MediaOverview* CreateMediaOverview()

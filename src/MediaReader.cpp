@@ -1004,7 +1004,6 @@ private:
 
             m_viddecOpenOpts.onlyUseSoftwareDecoder = !m_vidPreferUseHw;
             m_viddecOpenOpts.useHardwareType = m_vidUseHwType;
-            m_viddecOpenOpts.preferHwOutputPixfmt = true;
             FFUtils::OpenVideoDecoderResult res;
             if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &m_viddecOpenOpts, &res))
             {
