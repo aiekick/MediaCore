@@ -455,29 +455,30 @@ private:
             return false;
         }
 
+        bool openVideoFailed = true;
         if (HasVideo())
         {
             m_vidAvStm = m_avfmtCtx->streams[m_vidStmIdx];
 
-            m_viddec = avcodec_find_decoder(m_vidAvStm->codecpar->codec_id);
-            if (m_viddec == nullptr)
+            FFUtils::OpenVideoDecoderOptions opts;
+            opts.onlyUseSoftwareDecoder = !m_vidPreferUseHw;
+            FFUtils::OpenVideoDecoderResult res;
+            if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &opts, &res))
+            {
+                m_viddecCtx = res.decCtx;
+                openVideoFailed = false;
+            }
+            else
             {
                 ostringstream oss;
-                oss << "Can not find video decoder by codec_id " << m_vidAvStm->codecpar->codec_id << "!";
+                oss << "Open video decoder FAILED! Error is '" << res.errMsg << "'.";
                 m_errMsg = oss.str();
-                return false;
+                m_vidStmIdx = -1;
             }
-
-            if (m_vidPreferUseHw)
-            {
-                if (!OpenHwVideoDecoder())
-                    if (!OpenVideoDecoder())
-                        return false;
-            }
-            else if (!OpenVideoDecoder())
-                return false;
         }
+        m_decodeVideo = !openVideoFailed;
 
+        bool openAudioFailed = true;
         if (HasAudio())
         {
             m_audAvStm = m_avfmtCtx->streams[m_audStmIdx];
@@ -487,109 +488,20 @@ private:
             {
                 ostringstream oss;
                 oss << "Can not find audio decoder by codec_id " << m_audAvStm->codecpar->codec_id << "!";
-                m_errMsg = oss.str();
-                return false;
+                if (openVideoFailed)
+                    m_errMsg = m_errMsg+" "+oss.str();
+                else
+                    m_errMsg = oss.str();
             }
-
-            if (!OpenAudioDecoder())
-                return false;
+            else if (OpenAudioDecoder())
+                openAudioFailed = false;
         }
+        m_decodeAudio = !openAudioFailed;
+
+        if (openVideoFailed && openAudioFailed)
+            return false;
 
         m_prepared = true;
-        return true;
-    }
-
-    bool OpenVideoDecoder()
-    {
-        m_viddecCtx = avcodec_alloc_context3(m_viddec);
-        if (!m_viddecCtx)
-        {
-            m_errMsg = "FAILED to allocate new AVCodecContext!";
-            return false;
-        }
-        m_viddecCtx->opaque = this;
-
-        int fferr;
-        fferr = avcodec_parameters_to_context(m_viddecCtx, m_vidAvStm->codecpar);
-        if (fferr < 0)
-        {
-            m_errMsg = FFapiFailureMessage("avcodec_parameters_to_context", fferr);
-            return false;
-        }
-
-        m_viddecCtx->thread_count = 8;
-        // m_viddecCtx->thread_type = FF_THREAD_FRAME;
-        fferr = avcodec_open2(m_viddecCtx, m_viddec, nullptr);
-        if (fferr < 0)
-        {
-            m_errMsg = FFapiFailureMessage("avcodec_open2", fferr);
-            return false;
-        }
-        m_logger->Log(DEBUG) << "Video decoder '" << m_viddec->name << "' opened." << " thread_count=" << m_viddecCtx->thread_count
-            << ", thread_type=" << m_viddecCtx->thread_type << endl;
-        return true;
-    }
-
-    bool OpenHwVideoDecoder()
-    {
-        int fferr;
-        AVHWDeviceType hwDevType = AV_HWDEVICE_TYPE_NONE;
-        AVCodecContext* hwDecCtx = nullptr;
-        AVBufferRef* devCtx;
-        for (int i = 0; ; i++)
-        {
-            const AVCodecHWConfig* config = avcodec_get_hw_config(m_viddec, i);
-            if (!config)
-            {
-                m_vidHwPixFmt = AV_PIX_FMT_NONE;
-                ostringstream oss;
-                oss << "Decoder '" << m_viddec->name << "' does NOT support hardware acceleration.";
-                m_errMsg = oss.str();
-                return false;
-            }
-            if ((config->methods&AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) != 0)
-            {
-                if (m_vidUseHwType == AV_HWDEVICE_TYPE_NONE || m_vidUseHwType == config->device_type)
-                {
-                    m_vidHwPixFmt = config->pix_fmt;
-                    hwDevType = config->device_type;
-                    hwDecCtx = avcodec_alloc_context3(m_viddec);
-                    if (!hwDecCtx)
-                        continue;
-                    hwDecCtx->opaque = this;
-                    fferr = avcodec_parameters_to_context(hwDecCtx, m_vidAvStm->codecpar);
-                    if (fferr < 0)
-                    {
-                        avcodec_free_context(&hwDecCtx);
-                        continue;
-                    }
-                    hwDecCtx->get_format = get_hw_format;
-                    devCtx = nullptr;
-                    fferr = av_hwdevice_ctx_create(&devCtx, hwDevType, nullptr, nullptr, 0);
-                    if (fferr < 0)
-                    {
-                        avcodec_free_context(&hwDecCtx);
-                        if (devCtx) av_buffer_unref(&devCtx);
-                        continue;
-                    }
-                    hwDecCtx->hw_device_ctx = av_buffer_ref(devCtx);
-                    fferr = avcodec_open2(hwDecCtx, m_viddec, nullptr);
-                    if (fferr < 0)
-                    {
-                        avcodec_free_context(&hwDecCtx);
-                        av_buffer_unref(&devCtx);
-                        continue;
-                    }
-                    break;
-                }
-            }
-        }
-
-        m_viddecDevType = hwDevType;
-        m_viddecCtx = hwDecCtx;
-        m_viddecHwDevCtx = devCtx;
-        m_logger->Log(DEBUG) << "Use hardware device type '" << av_hwdevice_get_type_name(m_viddecDevType) << "'." << endl;
-        m_logger->Log(DEBUG) << "Video decoder(HW) '" << m_viddecCtx->codec->name << "' opened." << endl;
         return true;
     }
 
@@ -770,7 +682,12 @@ private:
 
         if (!m_prepared && !Prepare())
         {
-            m_logger->Log(Error) << "Prepare() FAILED! Error is '" << m_errMsg << "'." << endl;
+            m_logger->Log(Error) << "Prepare() FAILED for url '" << m_hParser->GetUrl() << "'! Error is '" << m_errMsg << "'." << endl;
+            return;
+        }
+        if (!m_decodeVideo)
+        {
+            m_demuxVidEof = true;
             return;
         }
 
@@ -888,8 +805,11 @@ private:
 
         while (!m_prepared && !m_quit)
             this_thread::sleep_for(chrono::milliseconds(5));
-        if (m_quit)
+        if (m_quit || !m_decodeVideo)
+        {
+            m_viddecEof = true;
             return;
+        }
 
         AVFrame avfrm = {0};
         bool avfrmLoaded = false;
@@ -1073,8 +993,11 @@ private:
         {
             while (!m_prepared && !m_quit)
                 this_thread::sleep_for(chrono::milliseconds(5));
-            if (m_quit)
-                return;
+        }
+        if (m_quit || !m_decodeAudio)
+        {
+            m_demuxAudEof = true;
+            return;
         }
 
         int fferr;
@@ -1153,8 +1076,11 @@ private:
 
         while (!m_prepared && !m_quit)
             this_thread::sleep_for(chrono::milliseconds(5));
-        if (m_quit)
+        if (m_quit || !m_decodeAudio)
+        {
+            m_auddecEof = true;
             return;
+        }
 
         AVFrame avfrm = {0};
         bool avfrmLoaded = false;
@@ -1459,7 +1385,6 @@ private:
         }
         m_vidAvStm = nullptr;
         m_audAvStm = nullptr;
-        m_viddec = nullptr;
         m_auddec = nullptr;
 
         m_demuxVidEof = false;
@@ -1513,7 +1438,8 @@ private:
     bool m_isImage{false};
     AVStream* m_vidAvStm{nullptr};
     AVStream* m_audAvStm{nullptr};
-    AVCodecPtr m_viddec{nullptr};
+    bool m_decodeVideo{false};
+    bool m_decodeAudio{false};
     AVCodecPtr m_auddec{nullptr};
     AVCodecContext* m_viddecCtx{nullptr};
     AVCodecContext* m_auddecCtx{nullptr};

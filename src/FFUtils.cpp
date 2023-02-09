@@ -1573,6 +1573,344 @@ bool AudioImMatAVFrameConverter::ConvertImMatToAVFrame(const ImGui::ImMat& amat,
     return true;
 }
 
+static AVPixelFormat _VideoDecoderCallback_GetFormat(AVCodecContext *ctx, const AVPixelFormat *pix_fmts)
+{
+    const FFUtils::OpenVideoDecoderOptions* options = reinterpret_cast<const FFUtils::OpenVideoDecoderOptions*>(ctx->opaque);
+    const AVPixelFormat *p;
+    AVPixelFormat swCandidate = AV_PIX_FMT_NONE;
+    AVPixelFormat hwCandidate = AV_PIX_FMT_NONE;
+    const bool useFixedPixfmt = options->forceOutputPixfmt != AV_PIX_FMT_NONE;
+    for (p = pix_fmts; *p != AV_PIX_FMT_NONE; p++)
+    {
+        if (useFixedPixfmt)
+        {
+            if (*p == options->forceOutputPixfmt)
+                return *p;
+        }
+        else
+        {
+            const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(*p);
+            if ((desc->flags&AV_PIX_FMT_FLAG_HWACCEL) != 0)
+            {
+                if (hwCandidate == AV_PIX_FMT_NONE)
+                    hwCandidate = *p;
+                if (swCandidate != AV_PIX_FMT_NONE)
+                    break;
+            }
+            else
+            {
+                if (swCandidate == AV_PIX_FMT_NONE)
+                    swCandidate = *p;
+                if (hwCandidate != AV_PIX_FMT_NONE)
+                    break;
+            }
+        }
+    }
+    if (options->preferHwOutputPixfmt && hwCandidate != AV_PIX_FMT_NONE)
+        return hwCandidate;
+    return swCandidate!=AV_PIX_FMT_NONE ? swCandidate : hwCandidate;
+}
+
+static bool _OpenHwVideoDecoder(AVCodecPtr codec, const AVCodecParameters *codecpar, const FFUtils::OpenVideoDecoderOptions* options, FFUtils::OpenVideoDecoderResult* result)
+{
+    int fferr;
+    AVCodecContext* hwDecCtx = nullptr;
+    for (int i = 0; ; i++)
+    {
+        const AVCodecHWConfig* config = avcodec_get_hw_config(codec, i);
+        if (!config)
+            break;
+
+        if ((config->methods&AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) != 0 &&
+            (options->useHardwareType == AV_HWDEVICE_TYPE_NONE || options->useHardwareType == config->device_type))
+        {
+            hwDecCtx = avcodec_alloc_context3(codec);
+            if (!hwDecCtx)
+                continue;
+            hwDecCtx->opaque = (void*)options;
+            fferr = avcodec_parameters_to_context(hwDecCtx, codecpar);
+            if (fferr < 0)
+            {
+                avcodec_free_context(&hwDecCtx);
+                hwDecCtx = nullptr;
+                continue;
+            }
+            hwDecCtx->get_format = _VideoDecoderCallback_GetFormat;
+            AVBufferRef* devCtx = nullptr;
+            fferr = av_hwdevice_ctx_create(&devCtx, config->device_type, nullptr, nullptr, 0);
+            if (fferr < 0)
+            {
+                if (devCtx) av_buffer_unref(&devCtx);
+                avcodec_free_context(&hwDecCtx);
+                hwDecCtx = nullptr;
+                continue;
+            }
+            hwDecCtx->hw_device_ctx = devCtx;
+            fferr = avcodec_open2(hwDecCtx, codec, nullptr);
+            if (fferr < 0)
+            {
+                avcodec_free_context(&hwDecCtx);
+                hwDecCtx = nullptr;
+                continue;
+            }
+            break;
+        }
+    }
+
+    if (!hwDecCtx)
+    {
+        ostringstream oss;
+        oss << "No suitable hardware decoder can be found for '" << codec->name << "'!";
+        result->errMsg = oss.str();
+        return false;
+    }
+
+    result->decCtx = hwDecCtx;
+    return true;
+}
+
+static bool _OpenSwVideoDecoder(AVCodecPtr codec, const AVCodecParameters *codecpar, const FFUtils::OpenVideoDecoderOptions* options, FFUtils::OpenVideoDecoderResult* result)
+{
+    AVCodecContext* swDecCtx = nullptr;
+    swDecCtx = avcodec_alloc_context3(codec);
+    if (!swDecCtx)
+    {
+        ostringstream oss;
+        oss << "FAILED to allocate new AVCodecContext for decoder '" << codec->name << "'!";
+        result->errMsg = oss.str();
+        return false;
+    }
+    swDecCtx->opaque = (void*)options;
+    swDecCtx->get_format = _VideoDecoderCallback_GetFormat;
+
+    int fferr;
+    fferr = avcodec_parameters_to_context(swDecCtx, codecpar);
+    if (fferr < 0)
+    {
+        avcodec_free_context(&swDecCtx);
+        ostringstream oss;
+        oss << "FAILED to invoke 'avcodec_parameters_to_context()' when opening decoder '" << codec->name << "'! fferr=" << fferr << ".";
+        result->errMsg = oss.str();
+        return false;
+    }
+
+    // TODO: decoder multi-thread opts are hardcoded here, should be controlled by FFUtils::OpenVideoDecoderOptions in the future
+    swDecCtx->thread_count = 8;
+    // swDecCtx->thread_type = FF_THREAD_FRAME;
+
+    fferr = avcodec_open2(swDecCtx, codec, nullptr);
+    if (fferr < 0)
+    {
+        avcodec_free_context(&swDecCtx);
+        ostringstream oss;
+        oss << "FAILED to invoke 'avcodec_open2()' when opening decoder '" << codec->name << "'! fferr=" << fferr << ".";
+        result->errMsg = oss.str();
+        return false;
+    }
+
+    result->decCtx = swDecCtx;
+    return true;
+}
+
+static bool _CheckVideoDecoderValidity(const AVFormatContext* pAvfmtCtx, int videoStreamIndex, FFUtils::OpenVideoDecoderResult* result)
+{
+    result->probeFrame = AllocSelfFreeAVFramePtr();
+    if (!result->probeFrame)
+    {
+        result->errMsg = "FAILED to allocate new 'SelfFreeAVFramePtr' instance as probe frame!";
+        return false;
+    }
+    int fferr;
+    AVFormatContext* avfmtCtx = nullptr;
+    fferr = avformat_open_input(&avfmtCtx, pAvfmtCtx->url, nullptr, nullptr);
+    if (fferr < 0)
+    {
+        ostringstream oss;
+        oss << "FAILED to invoke 'avformat_open_input()' on url '" << pAvfmtCtx->url << "'! fferr=" << fferr << ".";
+        result->errMsg = oss.str();
+        return false;
+    }
+    fferr = avformat_find_stream_info(avfmtCtx, nullptr);
+    if (fferr < 0)
+    {
+        avformat_close_input(&avfmtCtx);
+        ostringstream oss;
+        oss << "FAILED to invoke 'avformat_find_stream_info()' on url '" << pAvfmtCtx->url << "'! fferr=" << fferr << ".";
+        result->errMsg = oss.str();
+        return false;
+    }
+    bool checkPassed = true;
+    AVCodecContext* decCtx = result->decCtx;
+    AVFrame* decFrm = result->probeFrame.get();
+    bool inputEof = false;
+    while (true)
+    {
+        fferr = avcodec_receive_frame(decCtx, decFrm);
+        if (fferr == 0)
+            break;
+        else if (fferr == AVERROR_EOF)
+        {
+            result->errMsg = "No probe frame can be generated before EOF!";
+            checkPassed = false;
+            break;
+        }
+        else if (fferr != AVERROR(EAGAIN))
+        {
+            ostringstream oss;
+            oss << "FAILED to invoke 'avcodec_receive_frame()' when decoding probe frame on url '" << pAvfmtCtx->url << "'! fferr=" << fferr << ".";
+            result->errMsg = oss.str();
+            checkPassed = false;
+            break;
+        }
+        else if (inputEof)
+        {
+            ostringstream oss;
+            oss << "When decoding probe frame on url '" << pAvfmtCtx->url << "', 'avcodec_receive_frame()' still returns AVERROR(EAGAIN) while input has already met EOF.";
+            result->errMsg = oss.str();
+            checkPassed = false;
+            break;
+        }
+
+        if (!inputEof)
+        {
+            while (true)
+            {
+                AVPacket avpkt{0};
+                fferr = av_read_frame(avfmtCtx, &avpkt);
+                if (fferr == 0)
+                {
+                    if (avpkt.stream_index == videoStreamIndex)
+                    {
+                        fferr = avcodec_send_packet(decCtx, &avpkt);
+                        if (fferr == 0)
+                            break;
+                        else
+                        {
+                            ostringstream oss;
+                            oss << "FAILED to invoke 'avcodec_send_packet()' when decoding probe frame on url '" << pAvfmtCtx->url << "'! fferr=" << fferr << ".";
+                            result->errMsg = oss.str();
+                            checkPassed = false;
+                            break;
+                        }
+                    }
+                }
+                else if (fferr == AVERROR_EOF)
+                {
+                    inputEof = true;
+                    avcodec_send_packet(decCtx, NULL);
+                    break;
+                }
+            }
+            if (!checkPassed)
+                break;
+        }
+    }
+    avcodec_flush_buffers(decCtx);
+    avformat_close_input(&avfmtCtx);
+    return checkPassed;
+}
+
+namespace FFUtils
+{
+// Find and open an optimal video decoder
+bool OpenVideoDecoder(const AVFormatContext* pAvfmtCtx, int videoStreamIndex, const OpenVideoDecoderOptions* options, OpenVideoDecoderResult* result)
+{
+    // check arguments are valid
+    if (!result)
+        return false;
+    OpenVideoDecoderOptions opts;
+    if (options)
+        opts = *options;
+    if (!pAvfmtCtx)
+    {
+        result->errMsg = "Invalid argument 'pAvfmtCtx'! Null pointer.";
+        return false;
+    }
+    if (videoStreamIndex >= (int)pAvfmtCtx->nb_streams)
+    {
+        ostringstream oss;
+        oss << "Invalid argument 'videoStreamIndex'! Index " << videoStreamIndex << " exceeds the limit of nb_streams " << pAvfmtCtx->nb_streams << ".";
+        result->errMsg = oss.str();
+        return false;
+    }
+    if (videoStreamIndex < 0)
+    {
+        for (int i = 0; i < pAvfmtCtx->nb_streams; i++)
+        {
+            if (pAvfmtCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+            {
+                videoStreamIndex = i;
+                break;
+            }
+        }
+    }
+    if (videoStreamIndex < 0)
+    {
+        result->errMsg = "Can NOT find any VIDEO stream.";
+        return false;
+    }
+    if (pAvfmtCtx->streams[videoStreamIndex]->codecpar->codec_type != AVMEDIA_TYPE_VIDEO)
+    {
+        ostringstream oss;
+        oss << "Invalid argument! 'videoStreamIndex' is " << videoStreamIndex << ", but the specified stream is NOT VIDEO.";
+        result->errMsg = oss.str();
+        return false;
+    }
+
+    AVStream* targetStream = pAvfmtCtx->streams[videoStreamIndex];
+    AVCodecPtr codec = (AVCodecPtr)avcodec_find_decoder(targetStream->codecpar->codec_id);
+    OpenVideoDecoderResult hwResult, swResult;
+    bool ret = false;
+    if (!opts.onlyUseSoftwareDecoder)
+    {
+        ret = _OpenHwVideoDecoder(codec, targetStream->codecpar, &opts, &hwResult);
+        if (ret)
+        {
+            ret = _CheckVideoDecoderValidity(pAvfmtCtx, videoStreamIndex, &hwResult);
+            if (ret)
+                *result = hwResult;
+            else
+                Log(DEBUG) << "FAILED on validity check for HW video decoder '" << codec->name << "' on url '" << pAvfmtCtx->url
+                    << "! Error is '" << hwResult.errMsg << "'." << endl;
+        }
+        else
+            Log(DEBUG) << "FAILED to open HW video decoder '" << codec->name << "' on url '" << pAvfmtCtx->url
+                    << "! Error is '" << hwResult.errMsg << "'." << endl;
+    }
+    if (!ret)
+    {
+        ret = _OpenSwVideoDecoder(codec, targetStream->codecpar, &opts, &swResult);
+        if (ret)
+        {
+            ret = _CheckVideoDecoderValidity(pAvfmtCtx, videoStreamIndex, &swResult);
+            if (ret)
+                *result = swResult;
+            else
+                Log(DEBUG) << "FAILED on validity check for SW video decoder '" << codec->name << "' on url '" << pAvfmtCtx->url
+                    << "'! Error is '" << swResult.errMsg << "'." << endl;
+        }
+        else
+            Log(DEBUG) << "FAILED to open SW video decoder '" << codec->name << "' on url '" << pAvfmtCtx->url
+                    << "! Error is '" << swResult.errMsg << "'." << endl;
+    }
+    if (!ret)
+    {
+        result->decCtx = nullptr;
+        if (!swResult.errMsg.empty())
+            result->errMsg = move(swResult.errMsg);
+        else if (!hwResult.errMsg.empty())
+            result->errMsg = move(hwResult.errMsg);
+        else
+            result->errMsg = "No suitable decoder can be found!";
+    }
+    if (hwResult.decCtx && hwResult.decCtx != result->decCtx)
+        avcodec_free_context(&hwResult.decCtx);
+    if (swResult.decCtx && swResult.decCtx != result->decCtx)
+        avcodec_free_context(&swResult.decCtx);
+    return ret;
+}
+}
+
 static MediaInfo::Ratio MediaInfoRatioFromAVRational(const AVRational& src)
 {
     return { src.num, src.den };

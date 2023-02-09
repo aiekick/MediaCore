@@ -11,6 +11,7 @@
 extern "C"
 {
     #include "libavformat/avformat.h"
+    #include "libavcodec/avcodec.h"
     #include "libavutil/pixdesc.h"
     #include "libavutil/frame.h"
     #include "libswscale/swscale.h"
@@ -196,6 +197,25 @@ public:
 private:
     uint32_t m_sampleRate;
 };
+
+namespace FFUtils
+{
+// Find and open a video decoder
+struct OpenVideoDecoderOptions
+{
+    bool onlyUseSoftwareDecoder{false};
+    AVHWDeviceType useHardwareType{AV_HWDEVICE_TYPE_NONE};
+    bool preferHwOutputPixfmt{false};
+    AVPixelFormat forceOutputPixfmt{AV_PIX_FMT_NONE};
+};
+struct OpenVideoDecoderResult
+{
+    AVCodecContext* decCtx{nullptr};
+    SelfFreeAVFramePtr probeFrame;
+    std::string errMsg;
+};
+bool OpenVideoDecoder(const AVFormatContext* pAvfmtCtx, int videoStreamIndex, const OpenVideoDecoderOptions* options, OpenVideoDecoderResult* result);
+}
 
 #include "MediaInfo.h"
 
