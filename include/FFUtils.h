@@ -206,6 +206,7 @@ struct OpenVideoDecoderOptions
     bool onlyUseSoftwareDecoder{false};
     AVHWDeviceType useHardwareType{AV_HWDEVICE_TYPE_NONE};
     bool preferHwOutputPixfmt{false};
+    AVPixelFormat useHwOutputPixfmt{AV_PIX_FMT_NONE};
     AVPixelFormat forceOutputPixfmt{AV_PIX_FMT_NONE};
 };
 struct OpenVideoDecoderResult
@@ -215,7 +216,7 @@ struct OpenVideoDecoderResult
     SelfFreeAVFramePtr probeFrame;
     std::string errMsg;
 };
-bool OpenVideoDecoder(const AVFormatContext* pAvfmtCtx, int videoStreamIndex, const OpenVideoDecoderOptions* options, OpenVideoDecoderResult* result);
+bool OpenVideoDecoder(const AVFormatContext* pAvfmtCtx, int videoStreamIndex, OpenVideoDecoderOptions* options, OpenVideoDecoderResult* result);
 }
 
 #include "MediaInfo.h"

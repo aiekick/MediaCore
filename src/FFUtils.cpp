@@ -1592,7 +1592,8 @@ static AVPixelFormat _VideoDecoderCallback_GetFormat(AVCodecContext *ctx, const 
             const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(*p);
             if ((desc->flags&AV_PIX_FMT_FLAG_HWACCEL) != 0)
             {
-                if (hwCandidate == AV_PIX_FMT_NONE)
+                if (hwCandidate == AV_PIX_FMT_NONE &&
+                    (options->useHwOutputPixfmt == AV_PIX_FMT_NONE || *p == options->useHwOutputPixfmt))
                     hwCandidate = *p;
                 if (swCandidate != AV_PIX_FMT_NONE)
                     break;
@@ -1611,7 +1612,7 @@ static AVPixelFormat _VideoDecoderCallback_GetFormat(AVCodecContext *ctx, const 
     return swCandidate!=AV_PIX_FMT_NONE ? swCandidate : hwCandidate;
 }
 
-static bool _OpenHwVideoDecoder(AVCodecPtr codec, const AVCodecParameters *codecpar, const FFUtils::OpenVideoDecoderOptions* options, FFUtils::OpenVideoDecoderResult* result)
+static bool _OpenHwVideoDecoder(AVCodecPtr codec, const AVCodecParameters *codecpar, FFUtils::OpenVideoDecoderOptions* options, FFUtils::OpenVideoDecoderResult* result)
 {
     int fferr;
     AVCodecContext* hwDecCtx = nullptr;
@@ -1636,6 +1637,7 @@ static bool _OpenHwVideoDecoder(AVCodecPtr codec, const AVCodecParameters *codec
                 hwDecCtx = nullptr;
                 continue;
             }
+            options->useHwOutputPixfmt = config->pix_fmt;
             hwDecCtx->get_format = _VideoDecoderCallback_GetFormat;
             AVBufferRef* devCtx = nullptr;
             hwDevType = config->device_type;
@@ -1672,7 +1674,7 @@ static bool _OpenHwVideoDecoder(AVCodecPtr codec, const AVCodecParameters *codec
     return true;
 }
 
-static bool _OpenSwVideoDecoder(AVCodecPtr codec, const AVCodecParameters *codecpar, const FFUtils::OpenVideoDecoderOptions* options, FFUtils::OpenVideoDecoderResult* result)
+static bool _OpenSwVideoDecoder(AVCodecPtr codec, const AVCodecParameters *codecpar, FFUtils::OpenVideoDecoderOptions* options, FFUtils::OpenVideoDecoderResult* result)
 {
     AVCodecContext* swDecCtx = nullptr;
     swDecCtx = avcodec_alloc_context3(codec);
@@ -1816,14 +1818,16 @@ static bool _CheckVideoDecoderValidity(const AVFormatContext* pAvfmtCtx, int vid
 namespace FFUtils
 {
 // Find and open an optimal video decoder
-bool OpenVideoDecoder(const AVFormatContext* pAvfmtCtx, int videoStreamIndex, const OpenVideoDecoderOptions* options, OpenVideoDecoderResult* result)
+bool OpenVideoDecoder(const AVFormatContext* pAvfmtCtx, int videoStreamIndex, OpenVideoDecoderOptions* options, OpenVideoDecoderResult* result)
 {
     // check arguments are valid
     if (!result)
         return false;
-    OpenVideoDecoderOptions opts;
-    if (options)
-        opts = *options;
+    if (!options)
+    {
+        result->errMsg = "Argument 'options' must NOT be NULL!";
+        return false;
+    }
     if (!pAvfmtCtx)
     {
         result->errMsg = "Invalid argument 'pAvfmtCtx'! Null pointer.";
@@ -1864,9 +1868,9 @@ bool OpenVideoDecoder(const AVFormatContext* pAvfmtCtx, int videoStreamIndex, co
     AVCodecPtr codec = (AVCodecPtr)avcodec_find_decoder(targetStream->codecpar->codec_id);
     OpenVideoDecoderResult hwResult, swResult;
     bool ret = false;
-    if (!opts.onlyUseSoftwareDecoder)
+    if (!options->onlyUseSoftwareDecoder)
     {
-        ret = _OpenHwVideoDecoder(codec, targetStream->codecpar, &opts, &hwResult);
+        ret = _OpenHwVideoDecoder(codec, targetStream->codecpar, options, &hwResult);
         if (ret)
         {
             ret = _CheckVideoDecoderValidity(pAvfmtCtx, videoStreamIndex, &hwResult);
@@ -1882,7 +1886,7 @@ bool OpenVideoDecoder(const AVFormatContext* pAvfmtCtx, int videoStreamIndex, co
     }
     if (!ret)
     {
-        ret = _OpenSwVideoDecoder(codec, targetStream->codecpar, &opts, &swResult);
+        ret = _OpenSwVideoDecoder(codec, targetStream->codecpar, options, &swResult);
         if (ret)
         {
             ret = _CheckVideoDecoderValidity(pAvfmtCtx, videoStreamIndex, &swResult);

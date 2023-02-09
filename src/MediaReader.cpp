@@ -1002,11 +1002,11 @@ private:
             m_vidStartTime = m_vidAvStm->start_time != AV_NOPTS_VALUE ? m_vidAvStm->start_time : 0;
             m_vidTimeBase = m_vidAvStm->time_base;
 
-            FFUtils::OpenVideoDecoderOptions opts;
-            opts.onlyUseSoftwareDecoder = !m_vidPreferUseHw;
-            opts.useHardwareType = m_vidUseHwType;
+            m_viddecOpenOpts.onlyUseSoftwareDecoder = !m_vidPreferUseHw;
+            m_viddecOpenOpts.useHardwareType = m_vidUseHwType;
+            m_viddecOpenOpts.preferHwOutputPixfmt = true;
             FFUtils::OpenVideoDecoderResult res;
-            if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &opts, &res))
+            if (FFUtils::OpenVideoDecoder(m_avfmtCtx, -1, &m_viddecOpenOpts, &res))
             {
                 m_viddecCtx = res.decCtx;
                 AVHWDeviceType hwDevType = res.hwDevType;
@@ -3144,6 +3144,7 @@ private:
     AVStream* m_vidAvStm{nullptr};
     AVStream* m_audAvStm{nullptr};
     AVCodecPtr m_auddec{nullptr};
+    FFUtils::OpenVideoDecoderOptions m_viddecOpenOpts;
     AVCodecContext* m_viddecCtx{nullptr};
     bool m_vidPreferUseHw{true};
     AVHWDeviceType m_vidUseHwType{AV_HWDEVICE_TYPE_NONE};
