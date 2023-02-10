@@ -116,7 +116,7 @@ void Application_Initialize(void** handle)
     GetDefaultLogger()
         ->SetShowLevels(DEBUG);
     GetMediaReaderLogger()
-        ->SetShowLevels(VERBOSE);
+        ->SetShowLevels(DEBUG);
     GetMultiTrackAudioReaderLogger()
         ->SetShowLevels(DEBUG);
 

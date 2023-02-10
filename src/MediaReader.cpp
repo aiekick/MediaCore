@@ -1026,7 +1026,7 @@ private:
             if (m_audAvStm->start_time == INT64_MIN)
                 m_audAvStm->start_time = 0;
             m_audDurPts = CvtAudMtsToPts((int64_t)(m_audDurTs*1000));
-            m_audioTaskPtsGap = CvtAudMtsToPts(1000);  // set 1-second long task duration
+            m_audioTaskPtsGap = av_rescale_q(1000, MILLISEC_TIMEBASE, m_audAvStm->time_base);  // set 1-second long task duration
 
             m_auddec = avcodec_find_decoder(m_audAvStm->codecpar->codec_id);
             if (m_auddec == nullptr)
@@ -1664,15 +1664,18 @@ private:
                                     currTask->frmPtsAry.push_back(enqpkt->pts);
                                     lastPktPts = enqpkt->pts;
                                 }
-                                if (enqpkt->pts < currTask->seekPts.first)
+                                if (m_isVideoReader)
                                 {
-                                    m_logger->Log(DEBUG) << "-=-> Change current task 'seekPts.first' from " << currTask->seekPts.first << " to " << enqpkt->pts << endl;
-                                    currTask->seekPts.first = enqpkt->pts;
-                                }
-                                else if (enqpkt->pts > currTask->seekPts.second)
-                                {
-                                    m_logger->Log(DEBUG) << "-=-> Change current task 'seekPts.second' from " << currTask->seekPts.second << " to " << enqpkt->pts << endl;
-                                    currTask->seekPts.second = enqpkt->pts;
+                                    if (enqpkt->pts < currTask->seekPts.first)
+                                    {
+                                        m_logger->Log(DEBUG) << "-=-> Change current task 'seekPts.first' from " << currTask->seekPts.first << " to " << enqpkt->pts << endl;
+                                        currTask->seekPts.first = enqpkt->pts;
+                                    }
+                                    else if (enqpkt->pts > currTask->seekPts.second)
+                                    {
+                                        m_logger->Log(DEBUG) << "-=-> Change current task 'seekPts.second' from " << currTask->seekPts.second << " to " << enqpkt->pts << endl;
+                                        currTask->seekPts.second = enqpkt->pts;
+                                    }
                                 }
                             }
                             av_packet_unref(&avpkt);
@@ -2532,7 +2535,7 @@ private:
             cacheBeginTs = floor(readPos-beforeCacheDur);
             if (cacheBeginTs < 0) cacheBeginTs = 0;
             cacheEndTs = ceil(readPos+afterCacheDur);
-            if (cacheEndTs > m_audDurTs) cacheEndTs = m_audDurTs;
+            if (cacheEndTs > m_audDurTs) cacheEndTs = ceil(m_audDurTs);
             seekPosRead = CvtMtsToPts(floor(readPos)*1000);
             seekPos00 = CvtMtsToPts(cacheBeginTs*1000);
             seekPos10 = CvtMtsToPts((cacheEndTs-1)*1000);
@@ -2789,7 +2792,7 @@ private:
         int64_t beginPts = CvtMtsToPts((int64_t)(currwnd.cacheBeginTs*1000));
         int64_t endPts = CvtMtsToPts((int64_t)(currwnd.cacheEndTs*1000));
         int64_t pts0, pts1;
-        pts0 = beginPts-beginPts%m_audioTaskPtsGap;
+        pts0 = beginPts;
         while (pts0 < endPts)
         {
             pts1 = pts0+m_audioTaskPtsGap;
@@ -2802,8 +2805,10 @@ private:
         m_bldtskSnapWnd = currwnd;
         m_audReadTask = nullptr;
         m_audReadOffset = -1;
-        m_logger->Log(DEBUG) << "^^^ Initialized build task, pos = " << TimestampToString(m_bldtskSnapWnd.readPos) << ", window = ["
-            << TimestampToString(m_bldtskSnapWnd.cacheBeginTs) << " ~ " << TimestampToString(m_bldtskSnapWnd.cacheEndTs) << "]." << endl;
+        auto& first = m_bldtskTimeOrder.front();
+        auto& last = m_bldtskTimeOrder.back();
+        m_logger->Log(DEBUG) << "^^^ Initialized build task, first task seekPts=(" << first->seekPts.first << "," << first->seekPts.second
+            << "), last task seekPts=(" << last->seekPts.first << "," << last->seekPts.second << ")." << endl;
 
         UpdateBuildTaskByPriority();
     }
@@ -2822,8 +2827,7 @@ private:
                 (currwnd.seekPos00 == m_bldtskSnapWnd.seekPos00 && currwnd.seekPos10 > m_bldtskSnapWnd.seekPos10))
             {
                 int64_t beginPts = CvtMtsToPts((int64_t)(currwnd.cacheBeginTs*1000));
-                beginPts = beginPts-beginPts%m_audioTaskPtsGap;
-                int64_t endPts = CvtMtsToPts((int64_t)(currwnd.cacheEndTs*1000))+1;
+                int64_t endPts = CvtMtsToPts((int64_t)(currwnd.cacheEndTs*1000));
                 if (currwnd.seekPos00 <= m_bldtskSnapWnd.seekPos00)
                 {
                     beginPts = m_bldtskTimeOrder.back()->seekPts.second;
@@ -2866,9 +2870,7 @@ private:
             else //(currwnd.cacheBeginTs < m_bldtskSnapWnd.cacheBeginTs)
             {
                 int64_t beginPts = CvtMtsToPts((int64_t)(currwnd.cacheBeginTs*1000));
-                int64_t endPts = CvtMtsToPts((int64_t)(currwnd.cacheEndTs*1000))+1;
-                if (endPts%m_audioTaskPtsGap > 0)
-                    endPts = endPts-endPts%m_audioTaskPtsGap+m_audioTaskPtsGap;
+                int64_t endPts = CvtMtsToPts((int64_t)(currwnd.cacheEndTs*1000));
                 if (currwnd.seekPos10 >= m_bldtskSnapWnd.seekPos10)
                 {
                     endPts = m_bldtskTimeOrder.front()->seekPts.first;
@@ -3020,7 +3022,34 @@ private:
         }
 
         if (!m_audReadTask)
-            m_logger->Log(DEBUG) << "CAN NOT find next AUDIO read task!" << endl;
+        {
+            m_failedToFindNextReadTaskCounter++;
+            const int32_t c = m_failedToFindNextReadTaskCounter;
+            if (c == 1 || c%100 == 0)
+            {
+                ostringstream oss;
+                oss << "[" << m_failedToFindNextReadTaskCounter << "]CAN NOT find next AUDIO read task! "
+                    << "m_audReadNextTaskSeekPts0=";
+                if (m_audReadNextTaskSeekPts0 == INT64_MIN)
+                    oss << "INT64_MIN";
+                else
+                    oss << m_audReadNextTaskSeekPts0;
+                oss << ", m_bldtskTimeOrder=";
+                if (!m_bldtskTimeOrder.empty())
+                {
+                    auto& first = m_bldtskTimeOrder.front();
+                    auto& last = m_bldtskTimeOrder.back();
+                    oss << "(" << first->seekPts.first << "," << first->seekPts.second << ") ~ ("
+                        << last->seekPts.first << "," << last->seekPts.second << ")";
+                }
+                else
+                    oss << "EMPTY";
+                oss << ".";
+                m_logger->Log(WARN) << oss.str() << endl;
+            }
+        }
+        else
+            m_failedToFindNextReadTaskCounter = 0;
         return m_audReadTask;
     }
 
@@ -3207,6 +3236,7 @@ private:
     bool m_audReadEof{false};
     int64_t m_audReadNextTaskSeekPts0{INT64_MIN};
     int64_t m_audioTaskPtsGap{0};
+    int32_t m_failedToFindNextReadTaskCounter{0};
 
     float m_ssWFacotr{1.f}, m_ssHFacotr{1.f};
     AVFrameToImMatConverter m_frmCvt;
