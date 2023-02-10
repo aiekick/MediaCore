@@ -26,7 +26,7 @@ pkg_check_modules(
 # <<<
 
 # >>> include libass as dependency
-pkg_search_module(FONTCONFIG REQUIRED Fontconfig)
+pkg_search_module(FONTCONFIG REQUIRED fontconfig)
 # <<<
 
 # >>> include imgui as dependency (from source code)
