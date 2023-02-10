@@ -63,7 +63,7 @@ if(MEDIACORE_STATIC)
 set(LIBRARY STATIC)
 else(MEDIACORE_STATIC)
 set(LIBRARY SHARED)
-add_compile_definitions(MEDIACORE_SHARED)
+add_definitions(-DMEDIACORE_SHARED)
 endif(MEDIACORE_STATIC)
 
 add_library(MediaCore ${LIBRARY}
