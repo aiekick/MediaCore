@@ -26,7 +26,7 @@ pkg_check_modules(
 # <<<
 
 # >>> include libass as dependency
-find_package(Fontconfig REQUIRED)
+pkg_search_module(FONTCONFIG REQUIRED Fontconfig)
 # <<<
 
 # >>> include imgui as dependency (from source code)
@@ -103,7 +103,7 @@ target_include_directories(MediaCore PUBLIC
 target_link_libraries(MediaCore PUBLIC
     PkgConfig::FFMPEG
     PkgConfig::LIBASS
-    Fontconfig::Fontconfig
+    ${FONTCONFIG_LIBRARIES}
     imgui
 )
 # <<<
