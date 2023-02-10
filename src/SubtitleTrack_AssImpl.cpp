@@ -46,7 +46,7 @@ static void PrintAssStyle(ALogger* logger, ASS_Style* s)
     logger->Log(DEBUG) << '\t' << "Encoding: " << s->Encoding << endl;
     logger->Log(DEBUG) << '\t' << "treat_fontname_as_pattern: " << s->treat_fontname_as_pattern << endl;
     logger->Log(DEBUG) << '\t' << "Blur: " << s->Blur << endl;
-    logger->Log(DEBUG) << '\t' << "Justify: " << s->Justify << endl;
+    //logger->Log(DEBUG) << '\t' << "Justify: " << s->Justify << endl;
     logger->Log(DEBUG) << "--------------------------------------------------" << endl;
 }
 
