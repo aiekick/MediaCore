@@ -42,6 +42,7 @@ namespace MediaCore
         virtual int64_t Duration() const = 0;
         virtual uint32_t OutChannels() const = 0;
         virtual uint32_t OutSampleRate() const = 0;
+        virtual std::string OutSampleFormat() const = 0;
         virtual uint32_t OutFrameSize() const = 0;
     };
 

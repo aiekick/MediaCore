@@ -577,6 +577,11 @@ public:
         return m_outSampleRate;
     }
 
+    string OutSampleFormat() const override
+    {
+        return m_outSampleFormat;
+    }
+
     uint32_t OutFrameSize() const override
     {
         return m_frameSize;
