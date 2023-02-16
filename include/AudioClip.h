@@ -1,8 +1,9 @@
 #pragma once
 #include <memory>
 #include <atomic>
-#include "MediaReader.h"
+#include <string>
 #include "MediaCore.h"
+#include "MediaReader.h"
 
 namespace MediaCore
 {
@@ -14,12 +15,12 @@ namespace MediaCore
     struct MEDIACORE_API AudioClip
     {
         virtual ~AudioClip() {}
-        static AudioClipHolder CreateAudioInstance(
+        static AudioClipHolder CreateInstance(
             int64_t id, MediaParserHolder hParser,
-            uint32_t outChannels, uint32_t outSampleRate,
+            uint32_t outChannels, uint32_t outSampleRate, const std::string& outSampleFormat,
             int64_t start, int64_t startOffset, int64_t endOffset);
 
-        virtual AudioClipHolder Clone(uint32_t outChannels, uint32_t outSampleRate) const = 0;
+        virtual AudioClipHolder Clone(uint32_t outChannels, uint32_t outSampleRate, const std::string& outSampleFormat) const = 0;
         virtual MediaParserHolder GetMediaParser() const = 0;
         virtual int64_t Id() const = 0;
         virtual int64_t TrackId() const = 0;

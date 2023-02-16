@@ -306,13 +306,13 @@ public:
     {
         if (!HasAudio())
             return 0;
-        int channels;
+        int ch;
 #if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
-        channels = m_audAvStm->codecpar->channels;
+        ch = m_audAvStm->codecpar->channels;
 #else
-        channels = m_audAvStm->codecpar->ch_layout.nb_channels;
+        ch = m_audAvStm->codecpar->ch_layout.nb_channels;
 #endif
-        return channels >= 0 ? (uint32_t)channels : 0;
+        return ch >= 0 ? (uint32_t)ch : 0;
     }
 
     uint32_t GetAudioSampleRate() const override
