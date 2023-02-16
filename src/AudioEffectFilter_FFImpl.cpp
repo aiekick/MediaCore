@@ -159,7 +159,7 @@ public:
         return m_volume;
     }
 
-    string GetError() const
+    string GetError() const override
     {
         return m_errMsg;
     }
