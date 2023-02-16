@@ -187,15 +187,18 @@ private:
 class AudioImMatAVFrameConverter
 {
 public:
-    AudioImMatAVFrameConverter(uint32_t sampleRate) : m_sampleRate(sampleRate) {}
-    uint32_t SampleRate() const { return m_sampleRate; }
+    AudioImMatAVFrameConverter() = default;
 
     bool ConvertAVFrameToImMat(const AVFrame* avfrm, ImGui::ImMat& amat, double timestamp);
     bool ConvertImMatToAVFrame(const ImGui::ImMat& amat, AVFrame* avfrm, int64_t pts);
-
-private:
-    uint32_t m_sampleRate;
 };
+
+namespace FFUtils
+{
+    uint32_t CopyPcmDataEx(uint8_t channels, uint8_t bytesPerSample, uint32_t copySamples,
+        bool isDstPlanar,       uint8_t** ppDst, uint32_t dstOffsetSamples,
+        bool isSrcPlanar, const uint8_t** ppSrc, uint32_t srcOffsetSamples);
+}
 
 #include "MediaInfo.h"
 

@@ -116,7 +116,7 @@ void Application_Initialize(void** handle)
     GetDefaultLogger()
         ->SetShowLevels(DEBUG);
     GetMediaReaderLogger()
-        ->SetShowLevels(VERBOSE);
+        ->SetShowLevels(DEBUG);
     GetMultiTrackAudioReaderLogger()
         ->SetShowLevels(DEBUG);
 
@@ -454,6 +454,25 @@ bool Application_Frame(void * handle, bool app_will_quit)
         oss << "Audio pos: " << TimestampToString(g_audPos);
         string audTag = oss.str();
         ImGui::TextUnformatted(audTag.c_str());
+
+        ImGui::Spacing();
+
+        audTrackIdx = 1;
+        for (auto trackIter = g_mtAudReader->TrackListBegin(); trackIter != g_mtAudReader->TrackListEnd(); trackIter++)
+        {
+            if (trackIter != g_mtAudReader->TrackListBegin())
+                ImGui::SameLine();
+            ostringstream labeloss;
+            labeloss << "Trk" << audTrackIdx++;
+            string label = labeloss.str();
+            auto aeFilter = (*trackIter)->GetAudioEffectFilter();
+            float vol = aeFilter->GetVolume();
+            float volMin = 0, volMax = 1.5;
+            if (ImGui::VSliderFloat(label.c_str(), ImVec2(16, 128), &vol, volMin, volMax, "%.1f"))
+            {
+                aeFilter->SetVolume(vol);
+            }
+        }
 
         ImGui::End();
     }

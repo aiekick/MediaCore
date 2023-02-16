@@ -64,7 +64,7 @@ public:
         m_readPos = 0;
         m_frameSize = outChannels*4;  // for now, output sample format only supports float32 data type, thus 4 bytes per sample.
         m_isTrackOutputPlanar = av_sample_fmt_is_planar(m_trackOutSmpfmt);
-        m_matAvfrmCvter = new AudioImMatAVFrameConverter(outSampleRate);
+        m_matAvfrmCvter = new AudioImMatAVFrameConverter();
 
         m_configured = true;
         return true;
@@ -85,7 +85,7 @@ public:
         // clone all the tracks
         for (auto track : m_tracks)
         {
-            newInstance->m_tracks.push_back(track->Clone(outChannels, outSampleRate));
+            newInstance->m_tracks.push_back(track->Clone(outChannels, outSampleRate, av_get_sample_fmt_name(m_trackOutSmpfmt)));
         }
         newInstance->UpdateDuration();
         // create mixer in the new instance
@@ -167,11 +167,13 @@ public:
 
         TerminateMixingThread();
 
+        uint32_t outChannels;
 #if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
-        AudioTrackHolder hTrack(new AudioTrack(trackId, m_outChannels, m_outSampleRate));
+        outChannels = m_outChannels;
 #else
-        AudioTrackHolder hTrack(new AudioTrack(trackId, m_outChlyt.nb_channels, m_outSampleRate));
+        outChannels = m_outChlyt.nb_channels;
 #endif
+        AudioTrackHolder hTrack = CreateAudioTrack(trackId, outChannels, m_outSampleRate, av_get_sample_fmt_name(m_trackOutSmpfmt));
         hTrack->SetDirection(m_readForward);
         {
             lock_guard<recursive_mutex> lk2(m_trackLock);

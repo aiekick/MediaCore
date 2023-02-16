@@ -1573,6 +1573,70 @@ bool AudioImMatAVFrameConverter::ConvertImMatToAVFrame(const ImGui::ImMat& amat,
     return true;
 }
 
+namespace FFUtils
+{
+    uint32_t CopyPcmDataEx(uint8_t channels, uint8_t bytesPerSample, uint32_t copySamples,
+        bool isDstPlanar,       uint8_t** ppDst, uint32_t dstOffsetSamples,
+        bool isSrcPlanar, const uint8_t** ppSrc, uint32_t srcOffsetSamples)
+    {
+        if (channels == 0 || bytesPerSample == 0 || copySamples == 0 ||
+            !ppDst || !ppSrc)
+            return 0;
+        uint32_t dstBeginOffset = bytesPerSample*dstOffsetSamples;
+        if (!isDstPlanar) dstBeginOffset *= channels;
+        uint32_t srcBeginOffset = bytesPerSample*srcOffsetSamples;
+        if (!isSrcPlanar) srcBeginOffset *= channels;
+        if (isDstPlanar)
+        {
+            if (isSrcPlanar)
+            {
+                uint32_t copySize = bytesPerSample*copySamples;
+                for (int i = 0; i < channels; i++)
+                    memcpy(ppDst[i]+dstBeginOffset, ppSrc[i]+srcBeginOffset, copySize);
+            }
+            else
+            {
+                const uint8_t* pSrc = ppSrc[0];
+                uint32_t readOffset = srcBeginOffset;
+                uint32_t writeOffset = dstBeginOffset;
+                for (int j = 0; j < copySamples; j++)
+                {
+                    for (int i = 0; i < channels; i++)
+                    {
+                        memcpy(ppDst[i]+writeOffset, pSrc+readOffset, bytesPerSample);
+                        readOffset += bytesPerSample;
+                    }
+                    writeOffset += bytesPerSample;
+                }
+            }
+        }
+        else
+        {
+            if (isSrcPlanar)
+            {
+                uint8_t* pDst = ppDst[0];
+                uint32_t readOffset = srcBeginOffset;
+                uint32_t writeOffset = dstBeginOffset;
+                for (int j = 0; j < copySamples; j++)
+                {
+                    for (int i = 0; i < channels; i++)
+                    {
+                        memcpy(pDst+writeOffset, ppSrc[i]+readOffset, bytesPerSample);
+                        writeOffset += bytesPerSample;
+                    }
+                    readOffset += bytesPerSample;
+                }
+            }
+            else
+            {
+                uint32_t copySize = bytesPerSample*copySamples*channels;
+                memcpy(ppDst[0]+dstBeginOffset, ppSrc[0]+srcBeginOffset, copySize);
+            }
+        }
+        return copySamples;
+    }
+}
+
 static MediaInfo::Ratio MediaInfoRatioFromAVRational(const AVRational& src)
 {
     return { src.num, src.den };

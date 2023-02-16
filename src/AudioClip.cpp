@@ -22,7 +22,7 @@ namespace MediaCore
     public:
         AudioClip_AudioImpl(
             int64_t id, MediaParserHolder hParser,
-            uint32_t outChannels, uint32_t outSampleRate,
+            uint32_t outChannels, uint32_t outSampleRate, const string& outSampleFormat,
             int64_t start, int64_t startOffset, int64_t endOffset, bool exclusiveLogger = false)
             : m_id(id), m_start(start)
         {
@@ -40,7 +40,7 @@ namespace MediaCore
             m_srcReader = CreateMediaReader(loggerName);
             if (!m_srcReader->Open(hParser))
                 throw runtime_error(m_srcReader->GetError());
-            if (!m_srcReader->ConfigAudioReader(outChannels, outSampleRate))
+            if (!m_srcReader->ConfigAudioReader(outChannels, outSampleRate, outSampleFormat))
                 throw runtime_error(m_srcReader->GetError());
             m_srcDuration = (int64_t)(m_srcReader->GetAudioStream()->duration*1000);
             if (startOffset < 0)
@@ -62,10 +62,10 @@ namespace MediaCore
             ReleaseMediaReader(&m_srcReader);
         }
 
-        AudioClipHolder Clone(uint32_t outChannels, uint32_t outSampleRate) const override
+        AudioClipHolder Clone(uint32_t outChannels, uint32_t outSampleRate, const string& outSampleFormat) const override
         {
             AudioClipHolder newInstance = AudioClipHolder(new AudioClip_AudioImpl(
-                m_id, m_srcReader->GetMediaParser(), outChannels, outSampleRate, m_start, m_startOffset, m_endOffset));
+                m_id, m_srcReader->GetMediaParser(), outChannels, outSampleRate, outSampleFormat, m_start, m_startOffset, m_endOffset));
             return newInstance;
         }
 
@@ -275,12 +275,12 @@ namespace MediaCore
         bool m_eof{false};
     };
 
-    AudioClipHolder AudioClip::CreateAudioInstance(
+    AudioClipHolder AudioClip::CreateInstance(
         int64_t id, MediaParserHolder hParser,
-        uint32_t outChannels, uint32_t outSampleRate,
+        uint32_t outChannels, uint32_t outSampleRate, const string& outSampleFormat,
         int64_t start, int64_t startOffset, int64_t endOffset)
     {
-        return AudioClipHolder(new AudioClip_AudioImpl(id, hParser, outChannels, outSampleRate, start, startOffset, endOffset));
+        return AudioClipHolder(new AudioClip_AudioImpl(id, hParser, outChannels, outSampleRate, outSampleFormat, start, startOffset, endOffset));
     }
 
     ///////////////////////////////////////////////////////////////////////////////////////////
