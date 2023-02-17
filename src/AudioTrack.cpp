@@ -412,14 +412,34 @@ public:
         lock_guard<recursive_mutex> lk(m_apiLock);
         ImGui::ImMat amat;
         amat.create((int)readSamples, 1, (int)OutChannels(), (size_t)m_bytesPerSample);
-        uint32_t bufsize = amat.total()*amat.elemsize;
+        uint32_t bufSize = amat.total()*amat.elemsize;
         while (m_cachedSamples-m_readCacheOffsetSamples < readSamples)
         {
             double pos = 0;
-            ReadAudioSamples((uint8_t*)amat.data, bufsize, pos);
+            uint32_t readSize = bufSize;
+            ReadAudioSamples((uint8_t*)amat.data, readSize, pos);
             amat.elempack = 1;
             amat.rate = { (int)OutSampleRate(), 1 };
             amat.time_stamp = pos;
+            if (readSize < bufSize)
+            {
+                if (m_isPlanar)
+                {
+                    uint8_t* bufPtr = (uint8_t*)amat.data+readSize/m_outChannels;
+                    int lineSize = readSamples*m_bytesPerSample;
+                    int sizeToZero = (bufSize-readSize)/m_outChannels;
+                    for (int i = 0; i < m_outChannels; i++)
+                    {
+                        memset(bufPtr, 0, sizeToZero);
+                        bufPtr += lineSize;
+                    }
+                }
+                else
+                {
+                    uint8_t* bufPtr = (uint8_t*)amat.data+readSize;
+                    memset(bufPtr, 0, bufSize-readSize);
+                }
+            }
 
             // apply audio effect(s)
             list<ImGui::ImMat> aeOutMats;

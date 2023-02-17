@@ -2775,7 +2775,6 @@ private:
                 m_audReadOffset = -1;
             }
         }
-        m_logger->Log(DEBUG) << "Build task priority updated." << endl;
     }
 
     void ResetAudioSampleBuildTask()
