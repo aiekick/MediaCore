@@ -462,22 +462,50 @@ bool Application_Frame(void * handle, bool app_will_quit)
 
         ImGui::Spacing();
 
+        ImGui::BeginGroup();
         audTrackIdx = 1;
         for (auto trackIter = g_mtAudReader->TrackListBegin(); trackIter != g_mtAudReader->TrackListEnd(); trackIter++)
         {
             if (trackIter != g_mtAudReader->TrackListBegin())
                 ImGui::SameLine();
             ostringstream labeloss;
-            labeloss << "Trk" << audTrackIdx++;
+            labeloss << "Vol" << audTrackIdx++;
             string label = labeloss.str();
             auto aeFilter = (*trackIter)->GetAudioEffectFilter();
-            float vol = aeFilter->GetVolume();
+            AudioEffectFilter::VolumeParams volParams = aeFilter->GetVolumeParams();
+            float vol = volParams.volume;
             float volMin = 0, volMax = 1.5;
-            if (ImGui::VSliderFloat(label.c_str(), ImVec2(16, 128), &vol, volMin, volMax, "%.1f"))
+            if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &vol, volMin, volMax, "%.1f"))
             {
-                aeFilter->SetVolume(vol);
+                volParams.volume = vol;
+                aeFilter->SetVolumeParams(&volParams);
             }
         }
+        ImGui::EndGroup();
+
+        // ImGui::SameLine(20);
+        ImGui::Spacing();
+
+        ImGui::BeginGroup();
+        audTrackIdx = 1;
+        for (auto trackIter = g_mtAudReader->TrackListBegin(); trackIter != g_mtAudReader->TrackListEnd(); trackIter++)
+        {
+            if (trackIter != g_mtAudReader->TrackListBegin())
+                ImGui::SameLine();
+            ostringstream labeloss;
+            labeloss << "Lim" << audTrackIdx++;
+            string label = labeloss.str();
+            auto aeFilter = (*trackIter)->GetAudioEffectFilter();
+            AudioEffectFilter::LimiterParams limiterParams = aeFilter->GetLimiterParams();
+            float value = limiterParams.limit;
+            float valMin = 0.0625, valMax = 1;
+            if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+            {
+                limiterParams.limit = value;
+                aeFilter->SetLimiterParams(&limiterParams);
+            }
+        }
+        ImGui::EndGroup();
 
         ImGui::End();
     }

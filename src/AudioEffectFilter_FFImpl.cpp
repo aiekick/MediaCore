@@ -36,7 +36,7 @@ public:
         ReleaseFilterGraph();
     }
 
-    bool Init(const string& sampleFormat, uint32_t channels, uint32_t sampleRate) override
+    bool Init(uint32_t composeFlags, const string& sampleFormat, uint32_t channels, uint32_t sampleRate) override
     {
         AVSampleFormat smpfmt = av_get_sample_fmt(sampleFormat.c_str());
         if (smpfmt == AV_SAMPLE_FMT_NONE)
@@ -61,9 +61,17 @@ public:
             return false;
         }
 
-        bool ret = CreateFilterGraph(smpfmt, channels, sampleRate);
-        if (!ret)
-            return false;
+        if (composeFlags > 0)
+        {
+            bool ret = CreateFilterGraph(composeFlags, smpfmt, channels, sampleRate);
+            if (!ret)
+                return false;
+        }
+        else
+        {
+            m_logger->Log(DEBUG) << "This 'AudioEffectFilter' is using pass-through mode because 'composeFlags' is 0." << endl;
+            m_passThrough = true;
+        }
 
         m_smpfmt = smpfmt;
         m_channels = channels;
@@ -85,6 +93,11 @@ public:
         }
         if (in.empty())
             return true;
+        if (m_passThrough)
+        {
+            out.push_back(in);
+            return true;
+        }
 
         SelfFreeAVFramePtr avfrm = AllocSelfFreeAVFramePtr();
         if (!m_matCvter.ConvertImMatToAVFrame(in, avfrm.get(), m_nbSamples))
@@ -148,15 +161,57 @@ public:
         return !hasErr;
     }
 
-    bool SetVolume(float v) override
+    bool HasFilter(uint32_t composeFlags) const override
     {
-        m_volume = v;
+        return CheckFilters(composeFlags, composeFlags);
+    }
+
+    bool SetVolumeParams(VolumeParams* params) override
+    {
+        if (!HasFilter(VOLUME))
+        {
+            m_errMsg = "CANNOT set 'VolumeParams' because this instance is NOT initialized with 'AudioEffectFilter::VOLUME' compose-flag!";
+            return false;
+        }
+        m_setVolumeParams = *params;
         return true;
     }
 
-    float GetVolume() override
+    VolumeParams GetVolumeParams() const override
     {
-        return m_volume;
+        return m_setVolumeParams;
+    }
+
+    bool SetPanParams(PanParams* params) override
+    {
+        if (!HasFilter(PAN))
+        {
+            m_errMsg = "CANNOT set 'PanParams' because this instance is NOT initialized with 'AudioEffectFilter::PAN' compose-flag!";
+            return false;
+        }
+        m_setPanParams = *params;
+        return true;
+    }
+
+    PanParams GetPanParams() const override
+    {
+        return m_setPanParams;
+    }
+
+    bool SetLimiterParams(LimiterParams* params) override
+    {
+        if (!HasFilter(LIMITER))
+        {
+            m_errMsg = "CANNOT set 'LimiterParams' because this instance is NOT initialized with 'AudioEffectFilter::LIMITER' compose-flag!";
+            return false;
+        }
+        m_setLimiterParams = *params;
+        return true;
+    }
+
+    LimiterParams GetLimiterParams() const override
+    {
+        return m_setLimiterParams;
     }
 
     string GetError() const override
@@ -165,7 +220,7 @@ public:
     }
 
 private:
-    bool CreateFilterGraph(const AVSampleFormat smpfmt, uint32_t channels, uint32_t sampleRate)
+    bool CreateFilterGraph(uint32_t composeFlags, const AVSampleFormat smpfmt, uint32_t channels, uint32_t sampleRate)
     {
         const AVFilter *abuffersrc  = avfilter_get_by_name("abuffer");
         const AVFilter *abuffersink = avfilter_get_by_name("abuffersink");
@@ -232,8 +287,27 @@ private:
         inputs->next        = nullptr;
 
         ostringstream fgArgsOss;
-        fgArgsOss << "volume=volume=" << m_currVolume << ":precision=float:eval=frame";
+        bool isFirstFilter = true;
+        if (CheckFilters(composeFlags, LIMITER))
+        {
+            if (!isFirstFilter) fgArgsOss << ","; else isFirstFilter = false;
+            fgArgsOss << "alimiter=limit=" << m_currLimiterParams.limit << ":attack=" << m_currLimiterParams.attack << ":release=" << m_currLimiterParams.release;
+        }
+        if (CheckFilters(composeFlags, PAN))
+        {
+            m_logger->Log(Error) << "Filter 'pan' is NOT SUPPORTED yet! Ignore this setting." << endl;
+        }
+        if (CheckFilters(composeFlags, VOLUME))
+        {
+            if (!isFirstFilter) fgArgsOss << ","; else isFirstFilter = false;
+            fgArgsOss << "volume=volume=" << m_currVolumeParams.volume << ":precision=float:eval=frame";
+        }
+        if (!isFirstFilter)
+        {
+            fgArgsOss << ",aformat=f=" << av_get_sample_fmt_name(smpfmt);
+        }
         string fgArgs = fgArgsOss.str();
+        m_logger->Log(DEBUG) << "Initialze filter-graph with arguments '" << fgArgs << "'." << endl;
         fferr = avfilter_graph_parse_ptr(m_filterGraph, fgArgs.c_str(), &inputs, &outputs, nullptr);
         if (fferr < 0)
         {
@@ -260,6 +334,7 @@ private:
         avfilter_inout_free(&inputs);
         m_bufsrcCtx = bufSrcCtx;
         m_bufsinkCtx = bufSinkCtx;
+        m_composeFlags = composeFlags;
         return true;
     }
 
@@ -278,32 +353,102 @@ private:
     {
         int fferr;
         char cmdRes[256] = {0};
-        if (m_volume != m_currVolume)
+        if (m_setVolumeParams.volume != m_currVolumeParams.volume)
         {
-            m_logger->Log(DEBUG) << "Change volume: " << m_currVolume << " -> " << m_volume << " ... ";
+            m_logger->Log(DEBUG) << "Change VolumeParams::volume: " << m_currVolumeParams.volume << " -> " << m_setVolumeParams.volume << " ... ";
             char cmdArgs[32] = {0};
-            snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_volume);
+            snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_setVolumeParams.volume);
             fferr = avfilter_graph_send_command(m_filterGraph, "volume", "volume", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
             if (fferr >= 0)
             {
-                m_currVolume = m_volume;
+                m_currVolumeParams.volume = m_setVolumeParams.volume;
                 m_logger->Log(DEBUG) << "Succeeded." << endl;
             }
             else
             {
                 m_logger->Log(DEBUG) << "FAILED!" << endl;
                 ostringstream oss;
-                oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "volume" << "', arg='" << cmdArgs
-                    << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
+                oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "volume" << "', cmd='" << "volume"
+                    << "', arg='" << cmdArgs << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
+                m_errMsg = oss.str();
+                m_logger->Log(WARN) << m_errMsg << endl;
+            }
+        }
+        if (m_setLimiterParams.limit != m_currLimiterParams.limit)
+        {
+            m_logger->Log(DEBUG) << "Change LimiterParams::limit: " << m_currLimiterParams.limit << " -> " << m_setLimiterParams.limit << " ... ";
+            char cmdArgs[32] = {0};
+            snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_setLimiterParams.limit);
+            fferr = avfilter_graph_send_command(m_filterGraph, "alimiter", "limit", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
+            if (fferr >= 0)
+            {
+                m_currLimiterParams.limit = m_setLimiterParams.limit;
+                m_logger->Log(DEBUG) << "Succeeded." << endl;
+            }
+            else
+            {
+                m_logger->Log(DEBUG) << "FAILED!" << endl;
+                ostringstream oss;
+                oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "alimiter" << "', cmd='" << "limit"
+                    << "', arg='" << cmdArgs << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
+                m_errMsg = oss.str();
+                m_logger->Log(WARN) << m_errMsg << endl;
+            }
+        }
+        if (m_setLimiterParams.attack != m_currLimiterParams.attack)
+        {
+            m_logger->Log(DEBUG) << "Change LimiterParams::attack: " << m_currLimiterParams.attack << " -> " << m_setLimiterParams.attack << " ... ";
+            char cmdArgs[32] = {0};
+            snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_setLimiterParams.attack);
+            fferr = avfilter_graph_send_command(m_filterGraph, "alimiter", "attack", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
+            if (fferr >= 0)
+            {
+                m_currLimiterParams.attack = m_setLimiterParams.attack;
+                m_logger->Log(DEBUG) << "Succeeded." << endl;
+            }
+            else
+            {
+                m_logger->Log(DEBUG) << "FAILED!" << endl;
+                ostringstream oss;
+                oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "alimiter" << "', cmd='" << "attack"
+                    << "', arg='" << cmdArgs << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
+                m_errMsg = oss.str();
+                m_logger->Log(WARN) << m_errMsg << endl;
+            }
+        }
+        if (m_setLimiterParams.release != m_currLimiterParams.release)
+        {
+            m_logger->Log(DEBUG) << "Change LimiterParams::release: " << m_currLimiterParams.release << " -> " << m_setLimiterParams.release << " ... ";
+            char cmdArgs[32] = {0};
+            snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_setLimiterParams.release);
+            fferr = avfilter_graph_send_command(m_filterGraph, "alimiter", "release", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
+            if (fferr >= 0)
+            {
+                m_currLimiterParams.release = m_setLimiterParams.release;
+                m_logger->Log(DEBUG) << "Succeeded." << endl;
+            }
+            else
+            {
+                m_logger->Log(DEBUG) << "FAILED!" << endl;
+                ostringstream oss;
+                oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "alimiter" << "', cmd='" << "release"
+                    << "', arg='" << cmdArgs << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
                 m_errMsg = oss.str();
                 m_logger->Log(WARN) << m_errMsg << endl;
             }
         }
     }
 
+    bool CheckFilters(uint32_t composeFlags, uint32_t checkFlags) const
+    {
+        return (composeFlags&checkFlags) == checkFlags;
+    }
+
 private:
     ALogger* m_logger;
+    uint32_t m_composeFlags{0};
     bool m_inited{false};
+    bool m_passThrough{false};
     AVSampleFormat m_smpfmt{AV_SAMPLE_FMT_NONE};
     uint32_t m_channels{0};
     uint32_t m_sampleRate{0};
@@ -312,11 +457,19 @@ private:
     AVFilterGraph* m_filterGraph{nullptr};
     AVFilterContext* m_bufsrcCtx{nullptr};
     AVFilterContext* m_bufsinkCtx{nullptr};
-    float m_volume{1.f}, m_currVolume{1.f};
+
+    VolumeParams m_setVolumeParams, m_currVolumeParams;
+    PanParams m_setPanParams, m_currPanParams;
+    LimiterParams m_setLimiterParams, m_currLimiterParams;
+
     AudioImMatAVFrameConverter m_matCvter;
     int64_t m_nbSamples{0};
     string m_errMsg;
 };
+
+const uint32_t AudioEffectFilter::VOLUME        = 0x1;
+const uint32_t AudioEffectFilter::PAN           = 0x2;
+const uint32_t AudioEffectFilter::LIMITER       = 0x4;
 
 AudioEffectFilterHolder CreateAudioEffectFilter(const string& loggerName)
 {

@@ -33,7 +33,9 @@ public:
         ostringstream loggerNameOss;
         loggerNameOss << "AEFilter#" << id;
         m_aeFilter = CreateAudioEffectFilter(loggerNameOss.str());
-        if (!m_aeFilter->Init(outSampleFormat, outChannels, outSampleRate))
+        if (!m_aeFilter->Init(
+            AudioEffectFilter::VOLUME|AudioEffectFilter::LIMITER,
+            outSampleFormat, outChannels, outSampleRate))
             throw runtime_error(m_aeFilter->GetError());
     }
 
