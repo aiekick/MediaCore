@@ -66,6 +66,15 @@ public:
         m_isTrackOutputPlanar = av_sample_fmt_is_planar(m_trackOutSmpfmt);
         m_matAvfrmCvter = new AudioImMatAVFrameConverter();
 
+        m_aeFilter = CreateAudioEffectFilter("AEFilter#mix");
+        if (!m_aeFilter->Init(
+            AudioEffectFilter::VOLUME|AudioEffectFilter::LIMITER|AudioEffectFilter::PAN,
+            av_get_sample_fmt_name(m_mixOutSmpfmt), outChannels, outSampleRate))
+        {
+            m_errMsg = "FAILED to initialize AudioEffectFilter!";
+            return false;
+        }
+
         m_configured = true;
         return true;
     }
@@ -471,6 +480,11 @@ public:
         return ovlp;
     }
 
+    AudioEffectFilterHolder GetAudioEffectFilter() override
+    {
+        return m_aeFilter;
+    }
+
     int64_t Duration() const override
     {
         return m_duration;
@@ -722,6 +736,22 @@ private:
                             amat.rate = { (int)m_outSampleRate, 1 };
                             amat.elempack = outChannels;
                             av_frame_unref(outfrm.get());
+                            list<ImGui::ImMat> aeOutMats;
+                            if (!m_aeFilter->ProcessData(amat, aeOutMats))
+                            {
+                                m_logger->Log(Error) << "FAILED to apply AudioEffectFilter after mixing! Error is '" << m_aeFilter->GetError() << "'." << endl;
+                            }
+                            else if (aeOutMats.size() != 1)
+                                m_logger->Log(Error) << "After mixing AudioEffectFilter returns " << aeOutMats.size() << " mats!" << endl;
+                            else
+                            {
+                                auto& frontMat = aeOutMats.front();
+                                if (frontMat.total() != amat.total())
+                                    m_logger->Log(Error) << "After mixing AudioEffectFilter, front mat has different size (" << (frontMat.total()*4)
+                                        << ") against input mat (" << (amat.total()*4) << ")!" << endl;
+                                else
+                                    amat = frontMat;
+                            }
                             lock_guard<mutex> lk(m_outputMatsLock);
                             m_outputMats.push_back(amat);
                             idleLoop = false;
@@ -804,6 +834,8 @@ private:
     AVFilterInOut* m_filterInputs{nullptr};
     vector<AVFilterContext*> m_bufSrcCtxs;
     vector<AVFilterContext*> m_bufSinkCtxs;
+
+    AudioEffectFilterHolder m_aeFilter;
 };
 
 ALogger* MultiTrackAudioReader_Impl::s_logger;

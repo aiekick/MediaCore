@@ -3,6 +3,7 @@
 #include <list>
 #include "immat.h"
 #include "AudioTrack.h"
+#include "AudioEffectFilter.h"
 #include "Logger.h"
 #include "MediaCore.h"
 
@@ -31,6 +32,7 @@ struct MultiTrackAudioReader
     virtual MediaCore::AudioTrackHolder GetTrackById(int64_t trackId, bool createIfNotExists = false) = 0;
     virtual MediaCore::AudioClipHolder GetClipById(int64_t clipId) = 0;
     virtual MediaCore::AudioOverlapHolder GetOverlapById(int64_t ovlpId) = 0;
+    virtual MediaCore::AudioEffectFilterHolder GetAudioEffectFilter() = 0;
 
     virtual std::string GetError() const = 0;
 };

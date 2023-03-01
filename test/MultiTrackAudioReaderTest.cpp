@@ -460,44 +460,67 @@ bool Application_Frame(void * handle, bool app_will_quit)
         string audTag = oss.str();
         ImGui::TextUnformatted(audTag.c_str());
 
-        ImGui::Spacing();
+        ostringstream labeloss;
+        string label;
+        AudioEffectFilterHolder aeFilter;
+        float value, valMin, valMax;
 
+        ImGui::Spacing();
         ImGui::BeginGroup();
+        // Master volume
+        aeFilter = g_mtAudReader->GetAudioEffectFilter();
+        AudioEffectFilter::VolumeParams volParams = aeFilter->GetVolumeParams();
+        labeloss << "VolM";
+        label = labeloss.str();
+        value = volParams.volume;
+        valMin = 0; valMax = 1.5;
+        if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+        {
+            volParams.volume = value;
+            aeFilter->SetVolumeParams(&volParams);
+        }
+        // Track volume
         audTrackIdx = 1;
         for (auto trackIter = g_mtAudReader->TrackListBegin(); trackIter != g_mtAudReader->TrackListEnd(); trackIter++)
         {
-            if (trackIter != g_mtAudReader->TrackListBegin())
-                ImGui::SameLine();
-            ostringstream labeloss;
-            labeloss << "Vol" << audTrackIdx++;
-            string label = labeloss.str();
-            auto aeFilter = (*trackIter)->GetAudioEffectFilter();
-            AudioEffectFilter::VolumeParams volParams = aeFilter->GetVolumeParams();
-            float vol = volParams.volume;
-            float volMin = 0, volMax = 1.5;
-            if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &vol, volMin, volMax, "%.1f"))
+            ImGui::SameLine();
+            labeloss.str(""); labeloss << "Vol" << audTrackIdx++;
+            label = labeloss.str();
+            aeFilter = (*trackIter)->GetAudioEffectFilter();
+            volParams = aeFilter->GetVolumeParams();
+            value = volParams.volume;
+            if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
             {
-                volParams.volume = vol;
+                volParams.volume = value;
                 aeFilter->SetVolumeParams(&volParams);
             }
         }
         ImGui::EndGroup();
 
         ImGui::Spacing();
-
         ImGui::BeginGroup();
+        // Master limiter
+        aeFilter = g_mtAudReader->GetAudioEffectFilter();
+        AudioEffectFilter::LimiterParams limiterParams = aeFilter->GetLimiterParams();
+        labeloss.str(""); labeloss << "LimM";
+        label = labeloss.str();
+        value = limiterParams.limit;
+        valMin = 0.0625; valMax = 1;
+        if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+        {
+            limiterParams.limit = value;
+            aeFilter->SetLimiterParams(&limiterParams);
+        }
+        // Track limiter
         audTrackIdx = 1;
         for (auto trackIter = g_mtAudReader->TrackListBegin(); trackIter != g_mtAudReader->TrackListEnd(); trackIter++)
         {
-            if (trackIter != g_mtAudReader->TrackListBegin())
-                ImGui::SameLine();
-            ostringstream labeloss;
-            labeloss << "Lim" << audTrackIdx++;
-            string label = labeloss.str();
-            auto aeFilter = (*trackIter)->GetAudioEffectFilter();
-            AudioEffectFilter::LimiterParams limiterParams = aeFilter->GetLimiterParams();
-            float value = limiterParams.limit;
-            float valMin = 0.0625, valMax = 1;
+            ImGui::SameLine();
+            labeloss.str(""); labeloss << "Lim" << audTrackIdx++;
+            label = labeloss.str();
+            aeFilter = (*trackIter)->GetAudioEffectFilter();
+            limiterParams = aeFilter->GetLimiterParams();
+            value = limiterParams.limit;
             if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
             {
                 limiterParams.limit = value;
@@ -507,27 +530,45 @@ bool Application_Frame(void * handle, bool app_will_quit)
         ImGui::EndGroup();
 
         ImGui::Spacing();
-
         ImGui::BeginGroup();
+        // Master pan
+        aeFilter = g_mtAudReader->GetAudioEffectFilter();
+        AudioEffectFilter::PanParams panParams = aeFilter->GetPanParams();
+        valMin = 0; valMax = 1;
+        labeloss.str(""); labeloss << "PanM.X";
+        label = labeloss.str();
+        value = panParams.x;
+        if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+        {
+            panParams.x = value;
+            aeFilter->SetPanParams(&panParams);
+        }
+        ImGui::SameLine();
+        labeloss.str(""); labeloss << "PanM.Y";
+        label = labeloss.str();
+        value = panParams.y;
+        if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+        {
+            panParams.y = value;
+            aeFilter->SetPanParams(&panParams);
+        }
+        // Track pan
         audTrackIdx = 1;
         for (auto trackIter = g_mtAudReader->TrackListBegin(); trackIter != g_mtAudReader->TrackListEnd(); trackIter++)
         {
-            if (trackIter != g_mtAudReader->TrackListBegin())
-                ImGui::SameLine();
-            ostringstream labeloss;
-            labeloss << "Pan" << audTrackIdx << ".X";
-            string label = labeloss.str();
-            auto aeFilter = (*trackIter)->GetAudioEffectFilter();
-            AudioEffectFilter::PanParams panParams = aeFilter->GetPanParams();
-            float value = panParams.x;
-            float valMin = 0, valMax = 1;
+            aeFilter = (*trackIter)->GetAudioEffectFilter();
+            ImGui::SameLine();
+            labeloss.str(""); labeloss << "Pan" << audTrackIdx << ".X";
+            label = labeloss.str();
+            panParams = aeFilter->GetPanParams();
+            value = panParams.x;
             if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
             {
                 panParams.x = value;
                 aeFilter->SetPanParams(&panParams);
             }
-            labeloss.str("");
-            labeloss << "Pan" << audTrackIdx++ << ".Y";
+            ImGui::SameLine();
+            labeloss.str(""); labeloss << "Pan" << audTrackIdx++ << ".Y";
             label = labeloss.str();
             value = panParams.y;
             if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
