@@ -34,6 +34,7 @@ public:
     virtual ~AudioEffectFilter_FFImpl()
     {
         ReleaseFilterGraph();
+        ReleasePanFilterGraph();
     }
 
     bool Init(uint32_t composeFlags, const string& sampleFormat, uint32_t channels, uint32_t sampleRate) override
@@ -66,6 +67,12 @@ public:
             bool ret = CreateFilterGraph(composeFlags, smpfmt, channels, sampleRate);
             if (!ret)
                 return false;
+            if (CheckFilters(composeFlags, PAN))
+            {
+                ret = CreatePanFilterGraph(smpfmt, channels, sampleRate);
+                if (!ret)
+                    return false;
+            }
         }
         else
         {
@@ -111,22 +118,54 @@ public:
         UpdateFilterParameters();
 
         int fferr;
-        fferr = av_buffersrc_add_frame(m_bufsrcCtx, avfrm.get());
-        if (fferr < 0)
+        if (m_useGeneralFg)
         {
-            ostringstream oss;
-            oss << "FAILED to invoke av_buffersrc_add_frame()! fferr = " << fferr << ".";
-            m_errMsg = oss.str();
-            return false;
+            fferr = av_buffersrc_add_frame(m_bufsrcCtx, avfrm.get());
+            if (fferr < 0)
+            {
+                ostringstream oss;
+                oss << "FAILED to invoke av_buffersrc_add_frame()! fferr = " << fferr << ".";
+                m_errMsg = oss.str();
+                return false;
+            }
         }
 
         bool hasErr = false;
         while (true)
         {
-            av_frame_unref(avfrm.get());
-            fferr = av_buffersink_get_frame(m_bufsinkCtx, avfrm.get());
+            if (m_useGeneralFg)
+            {
+                av_frame_unref(avfrm.get());
+                fferr = av_buffersink_get_frame(m_bufsinkCtx, avfrm.get());
+            }
+            else
+            {
+                fferr = 0;
+            }
             if (fferr >= 0)
             {
+                if (m_usePanFg)
+                {
+                    fferr = av_buffersrc_add_frame(m_panBufsrcCtx, avfrm.get());
+                    if (fferr < 0)
+                    {
+                        ostringstream oss;
+                        oss << "FAILED to invoke av_buffersrc_add_frame() on PAN filter-graph! fferr = " << fferr << ".";
+                        m_errMsg = oss.str();
+                        hasErr = true;
+                        break;
+                    }
+                    av_frame_unref(avfrm.get());
+                    fferr = av_buffersink_get_frame(m_panBufsinkCtx, avfrm.get());
+                    if (fferr < 0)
+                    {
+                        ostringstream oss;
+                        oss << "FAILED to invoke av_buffersink_get_frame() on PAN filter-graph! fferr = " << fferr << ".";
+                        m_errMsg = oss.str();
+                        hasErr = true;
+                        break;
+                    }
+                }
                 if (avfrm->nb_samples > 0)
                 {
                     ImGui::ImMat m;
@@ -163,7 +202,7 @@ public:
 
     bool HasFilter(uint32_t composeFlags) const override
     {
-        return CheckFilters(composeFlags, composeFlags);
+        return CheckFilters(m_composeFlags, composeFlags);
     }
 
     bool SetVolumeParams(VolumeParams* params) override
@@ -222,6 +261,16 @@ public:
 private:
     bool CreateFilterGraph(uint32_t composeFlags, const AVSampleFormat smpfmt, uint32_t channels, uint32_t sampleRate)
     {
+        if (composeFlags&(~PAN) == 0)
+        {
+            m_useGeneralFg = false;
+            return true;
+        }
+        else
+        {
+            m_useGeneralFg = true;
+        }
+
         const AVFilter *abuffersrc  = avfilter_get_by_name("abuffer");
         const AVFilter *abuffersink = avfilter_get_by_name("abuffersink");
         m_filterGraph = avfilter_graph_alloc();
@@ -234,15 +283,16 @@ private:
         ostringstream abufsrcArgsOss;
         abufsrcArgsOss << "time_base=1/" << sampleRate << ":sample_rate=" << sampleRate
             << ":sample_fmt=" << av_get_sample_fmt_name(smpfmt);
+        char chlytDescBuff[256] = {0};
 #if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
-        abufsrcArgsOss << ":channel_layout=" << av_get_default_channel_layout(channels);
+        int64_t chlyt = av_get_default_channel_layout(channels);
+        av_get_channel_layout_string(chlytDescBuff, sizeof(chlytDescBuff), channels, (uint64_t)chlyt);
 #else
         AVChannelLayout chlyt{AV_CHANNEL_ORDER_UNSPEC, 0};
         av_channel_layout_default(&chlyt, channels);
-        char chlytDescBuff[256] = {0};
         av_channel_layout_describe(&chlyt, chlytDescBuff, sizeof(chlytDescBuff));
-        abufsrcArgsOss << ":channel_layout=" << chlytDescBuff;
 #endif
+        abufsrcArgsOss << ":channel_layout=" << chlytDescBuff;
         string bufsrcArgs = abufsrcArgsOss.str();
         int fferr;
         AVFilterContext* bufSrcCtx = nullptr;
@@ -349,6 +399,177 @@ private:
         m_bufsinkCtx = nullptr;
     }
 
+    bool CreatePanFilterGraph(const AVSampleFormat smpfmt, uint32_t channels, uint32_t sampleRate)
+    {
+        if (m_currPanParams.x == 0.5f && m_currPanParams.y == 0.5f)
+        {
+            m_usePanFg = false;
+            return true;
+        }
+        else
+        {
+            m_usePanFg = true;
+        }
+
+        const AVFilter *abuffersrc  = avfilter_get_by_name("abuffer");
+        const AVFilter *abuffersink = avfilter_get_by_name("abuffersink");
+        m_panFg = avfilter_graph_alloc();
+        if (!m_panFg)
+        {
+            m_errMsg = "FAILED to allocate new 'AVFilterGraph'(pan)!";
+            return false;
+        }
+
+        ostringstream abufsrcArgsOss;
+        abufsrcArgsOss << "time_base=1/" << sampleRate << ":sample_rate=" << sampleRate
+            << ":sample_fmt=" << av_get_sample_fmt_name(smpfmt);
+        char chlytDescBuff[256] = {0};
+#if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
+        uint64_t chlyt = (uint64_t)av_get_default_channel_layout(channels);
+        av_get_channel_layout_string(chlytDescBuff, sizeof(chlytDescBuff), channels, chlyt);
+#else
+        AVChannelLayout chlyt{AV_CHANNEL_ORDER_UNSPEC, 0};
+        av_channel_layout_default(&chlyt, channels);
+        av_channel_layout_describe(&chlyt, chlytDescBuff, sizeof(chlytDescBuff));
+#endif
+        abufsrcArgsOss << ":channel_layout=" << chlytDescBuff;
+        string bufsrcArgs = abufsrcArgsOss.str();
+        int fferr;
+        AVFilterContext* bufSrcCtx = nullptr;
+        fferr = avfilter_graph_create_filter(&bufSrcCtx, abuffersrc, "BufferSource", bufsrcArgs.c_str(), nullptr, m_panFg);
+        if (fferr < 0)
+        {
+            ostringstream oss;
+            oss << "FAILED when invoking 'avfilter_graph_create_filter' for source buffer! fferr=" << fferr << ".";
+            m_errMsg = oss.str();
+            return false;
+        }
+        AVFilterInOut* outputs = avfilter_inout_alloc();
+        if (!outputs)
+        {
+            m_errMsg = "FAILED to allocate 'AVFilterInOut' instance!";
+            return false;
+        }
+        outputs->name       = av_strdup("in");
+        outputs->filter_ctx = bufSrcCtx;
+        outputs->pad_idx    = 0;
+        outputs->next       = nullptr;
+
+        AVFilterContext* bufSinkCtx = nullptr;
+        fferr = avfilter_graph_create_filter(&bufSinkCtx, abuffersink, "BufferSink", nullptr, nullptr, m_panFg);
+        if (fferr < 0)
+        {
+            ostringstream oss;
+            oss << "FAILED when invoking 'avfilter_graph_create_filter' for sink buffer! fferr=" << fferr << ".";
+            m_errMsg = oss.str();
+            return false;
+        }
+        AVFilterInOut* inputs = avfilter_inout_alloc();
+        if (!inputs)
+        {
+            avfilter_inout_free(&outputs);
+            m_errMsg = "FAILED to allocate 'AVFilterInOut' instance!";
+            return false;
+        }
+        inputs->name        = av_strdup("out");
+        inputs->filter_ctx  = bufSinkCtx;
+        inputs->pad_idx     = 0;
+        inputs->next        = nullptr;
+
+        ostringstream fgArgsOss;
+        fgArgsOss << "pan=" << chlytDescBuff << "| ";
+        for (int i = 0; i < channels; i++)
+        {
+            double xCoef = 1., yCoef = 1.;
+#if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
+            uint64_t ch = av_channel_layout_extract_channel(chlyt, i);
+            if (ch == AV_CH_FRONT_LEFT || ch == AV_CH_BACK_LEFT || ch == AV_CH_FRONT_LEFT_OF_CENTER ||
+                ch == AV_CH_SIDE_LEFT || ch == AV_CH_TOP_FRONT_LEFT || ch == AV_CH_TOP_BACK_LEFT ||
+                ch == AV_CH_STEREO_LEFT || ch == AV_CH_WIDE_LEFT || ch == AV_CH_SURROUND_DIRECT_LEFT ||
+                ch == AV_CH_TOP_SIDE_LEFT || ch == AV_CH_BOTTOM_FRONT_LEFT)
+                xCoef *= (1-m_currPanParams.x)/0.5;
+            else if (ch == AV_CH_FRONT_RIGHT || ch == AV_CH_BACK_RIGHT || ch == AV_CH_FRONT_RIGHT_OF_CENTER ||
+                ch == AV_CH_SIDE_RIGHT || ch == AV_CH_TOP_FRONT_RIGHT || ch == AV_CH_TOP_BACK_RIGHT ||
+                ch == AV_CH_STEREO_RIGHT || ch == AV_CH_WIDE_RIGHT || ch == AV_CH_SURROUND_DIRECT_RIGHT ||
+                ch == AV_CH_TOP_SIDE_RIGHT || ch == AV_CH_BOTTOM_FRONT_RIGHT)
+                xCoef *= m_currPanParams.x/0.5;
+            if (ch == AV_CH_FRONT_LEFT || ch == AV_CH_FRONT_RIGHT || ch == AV_CH_FRONT_CENTER ||
+                ch == AV_CH_FRONT_LEFT_OF_CENTER || ch == AV_CH_FRONT_RIGHT_OF_CENTER || ch == AV_CH_TOP_FRONT_LEFT ||
+                ch == AV_CH_TOP_FRONT_CENTER || ch == AV_CH_TOP_FRONT_RIGHT || ch == AV_CH_BOTTOM_FRONT_CENTER ||
+                ch == AV_CH_BOTTOM_FRONT_LEFT || ch == AV_CH_BOTTOM_FRONT_RIGHT)
+                yCoef *= (1-m_currPanParams.y)/0.5;
+            else if (ch == AV_CH_BACK_LEFT || ch == AV_CH_BACK_RIGHT || ch == AV_CH_BACK_CENTER ||
+                ch == AV_CH_TOP_BACK_LEFT || ch == AV_CH_TOP_BACK_CENTER || ch == AV_CH_TOP_BACK_RIGHT)
+                yCoef *= m_currPanParams.y/0.5;
+#else
+            enum AVChannel ch = av_channel_layout_channel_from_index(&chlyt, (unsigned int)i);
+            if (ch == AV_CHAN_FRONT_LEFT || ch == AV_CHAN_BACK_LEFT || ch == AV_CHAN_FRONT_LEFT_OF_CENTER ||
+                ch == AV_CHAN_SIDE_LEFT || ch == AV_CHAN_TOP_FRONT_LEFT || ch == AV_CHAN_TOP_BACK_LEFT ||
+                ch == AV_CHAN_STEREO_LEFT || ch == AV_CHAN_WIDE_LEFT || ch == AV_CHAN_SURROUND_DIRECT_LEFT ||
+                ch == AV_CHAN_TOP_SIDE_LEFT || ch == AV_CHAN_BOTTOM_FRONT_LEFT)
+                xCoef *= (1-m_currPanParams.x)/0.5;
+            else if (ch == AV_CHAN_FRONT_RIGHT || ch == AV_CHAN_BACK_RIGHT || ch == AV_CHAN_FRONT_RIGHT_OF_CENTER ||
+                ch == AV_CHAN_SIDE_RIGHT || ch == AV_CHAN_TOP_FRONT_RIGHT || ch == AV_CHAN_TOP_BACK_RIGHT ||
+                ch == AV_CHAN_STEREO_RIGHT || ch == AV_CHAN_WIDE_RIGHT || ch == AV_CHAN_SURROUND_DIRECT_RIGHT ||
+                ch == AV_CHAN_TOP_SIDE_RIGHT || ch == AV_CHAN_BOTTOM_FRONT_RIGHT)
+                xCoef *= m_currPanParams.x/0.5;
+            if (ch == AV_CHAN_FRONT_LEFT || ch == AV_CHAN_FRONT_RIGHT || ch == AV_CHAN_FRONT_CENTER ||
+                ch == AV_CHAN_FRONT_LEFT_OF_CENTER || ch == AV_CHAN_FRONT_RIGHT_OF_CENTER || ch == AV_CHAN_TOP_FRONT_LEFT ||
+                ch == AV_CHAN_TOP_FRONT_CENTER || ch == AV_CHAN_TOP_FRONT_RIGHT || ch == AV_CHAN_BOTTOM_FRONT_CENTER ||
+                ch == AV_CHAN_BOTTOM_FRONT_LEFT || ch == AV_CHAN_BOTTOM_FRONT_RIGHT)
+                yCoef *= (1-m_currPanParams.y)/0.5;
+            else if (ch == AV_CHAN_BACK_LEFT || ch == AV_CHAN_BACK_RIGHT || ch == AV_CHAN_BACK_CENTER ||
+                ch == AV_CHAN_TOP_BACK_LEFT || ch == AV_CHAN_TOP_BACK_CENTER || ch == AV_CHAN_TOP_BACK_RIGHT)
+                yCoef *= m_currPanParams.y/0.5;
+#endif
+            double finalCoef = xCoef*yCoef;
+            fgArgsOss << "c" << i << "=" << finalCoef << "*" << "c" << i;
+            if (i < channels-1)
+                fgArgsOss << " | ";
+        }
+        fgArgsOss << ",aformat=f=" << av_get_sample_fmt_name(smpfmt);
+        string fgArgs = fgArgsOss.str();
+        m_logger->Log(DEBUG) << "Initialze PAN filter-graph with arguments '" << fgArgs << "'." << endl;
+        fferr = avfilter_graph_parse_ptr(m_panFg, fgArgs.c_str(), &inputs, &outputs, nullptr);
+        if (fferr < 0)
+        {
+            avfilter_inout_free(&outputs);
+            avfilter_inout_free(&inputs);
+            ostringstream oss;
+            oss << "FAILED to invoke 'avfilter_graph_parse_ptr' with arguments string '" << fgArgs << "'! fferr=" << fferr << ".";
+            m_errMsg = oss.str();
+            return false;
+        }
+
+        fferr = avfilter_graph_config(m_panFg, nullptr);
+        if (fferr < 0)
+        {
+            avfilter_inout_free(&outputs);
+            avfilter_inout_free(&inputs);
+            ostringstream oss;
+            oss << "FAILED to invoke 'avfilter_graph_config'! fferr=" << fferr << ".";
+            m_errMsg = oss.str();
+            return false;
+        }
+
+        avfilter_inout_free(&outputs);
+        avfilter_inout_free(&inputs);
+        m_panBufsrcCtx = bufSrcCtx;
+        m_panBufsinkCtx = bufSinkCtx;
+        return true;
+    }
+
+    void ReleasePanFilterGraph()
+    {
+        if (m_panFg)
+        {
+            avfilter_graph_free(&m_panFg);
+            m_panFg = nullptr;
+        }
+        m_panBufsrcCtx = nullptr;
+        m_panBufsinkCtx = nullptr;
+    }
+
     void UpdateFilterParameters()
     {
         int fferr;
@@ -437,6 +658,17 @@ private:
                 m_logger->Log(WARN) << m_errMsg << endl;
             }
         }
+        if (m_setPanParams.x != m_currPanParams.x || m_setPanParams.y != m_currPanParams.y)
+        {
+            m_logger->Log(DEBUG) << "Change PanParams (" << m_currPanParams.x << ", " << m_currPanParams.y << ") -> (" << m_setPanParams.x << ", " << m_setPanParams.y << ")." << endl;
+            m_currPanParams = m_setPanParams;
+            ReleasePanFilterGraph();
+            if (!CreatePanFilterGraph(m_smpfmt, m_channels, m_sampleRate))
+            {
+                m_logger->Log(Error) << "FAILED to re-create PAN filter-graph during updating the parameters! Error is '" << m_errMsg << "'." << endl;
+                m_usePanFg = false;
+            }
+        }
     }
 
     bool CheckFilters(uint32_t composeFlags, uint32_t checkFlags) const
@@ -454,9 +686,14 @@ private:
     uint32_t m_sampleRate{0};
     uint32_t m_blockAlign{0};
     bool m_isPlanar{false};
+    bool m_useGeneralFg{false};
     AVFilterGraph* m_filterGraph{nullptr};
     AVFilterContext* m_bufsrcCtx{nullptr};
     AVFilterContext* m_bufsinkCtx{nullptr};
+    bool m_usePanFg{false};
+    AVFilterGraph* m_panFg{nullptr};
+    AVFilterContext* m_panBufsrcCtx{nullptr};
+    AVFilterContext* m_panBufsinkCtx{nullptr};
 
     VolumeParams m_setVolumeParams, m_currVolumeParams;
     PanParams m_setPanParams, m_currPanParams;

@@ -483,7 +483,6 @@ bool Application_Frame(void * handle, bool app_will_quit)
         }
         ImGui::EndGroup();
 
-        // ImGui::SameLine(20);
         ImGui::Spacing();
 
         ImGui::BeginGroup();
@@ -503,6 +502,38 @@ bool Application_Frame(void * handle, bool app_will_quit)
             {
                 limiterParams.limit = value;
                 aeFilter->SetLimiterParams(&limiterParams);
+            }
+        }
+        ImGui::EndGroup();
+
+        ImGui::Spacing();
+
+        ImGui::BeginGroup();
+        audTrackIdx = 1;
+        for (auto trackIter = g_mtAudReader->TrackListBegin(); trackIter != g_mtAudReader->TrackListEnd(); trackIter++)
+        {
+            if (trackIter != g_mtAudReader->TrackListBegin())
+                ImGui::SameLine();
+            ostringstream labeloss;
+            labeloss << "Pan" << audTrackIdx << ".X";
+            string label = labeloss.str();
+            auto aeFilter = (*trackIter)->GetAudioEffectFilter();
+            AudioEffectFilter::PanParams panParams = aeFilter->GetPanParams();
+            float value = panParams.x;
+            float valMin = 0, valMax = 1;
+            if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+            {
+                panParams.x = value;
+                aeFilter->SetPanParams(&panParams);
+            }
+            labeloss.str("");
+            labeloss << "Pan" << audTrackIdx++ << ".Y";
+            label = labeloss.str();
+            value = panParams.y;
+            if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+            {
+                panParams.y = value;
+                aeFilter->SetPanParams(&panParams);
             }
         }
         ImGui::EndGroup();
