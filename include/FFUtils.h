@@ -13,6 +13,7 @@ extern "C"
     #include "libavformat/avformat.h"
     #include "libavcodec/avcodec.h"
     #include "libavutil/pixdesc.h"
+    #include "libavutil/samplefmt.h"
     #include "libavutil/frame.h"
     #include "libswscale/swscale.h"
     #include "libavfilter/avfilter.h"
@@ -43,6 +44,7 @@ MEDIACORE_API SelfFreeAVFramePtr WrapSelfFreeAVFramePtr(AVFrame* avfrm);
 
 MEDIACORE_API AVPixelFormat GetAVPixelFormatByName(const std::string& name);
 MEDIACORE_API ImColorFormat ConvertPixelFormatToColorFormat(AVPixelFormat pixfmt);
+MEDIACORE_API ImDataType GetDataTypeFromSampleFormat(AVSampleFormat smpfmt);
 MEDIACORE_API bool ConvertAVFrameToImMat(const AVFrame* avfrm, ImGui::ImMat& vmat, double timestamp);
 MEDIACORE_API bool ConvertImMatToAVFrame(const ImGui::ImMat& vmat, AVFrame* avfrm, int64_t pts);
 

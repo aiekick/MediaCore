@@ -46,6 +46,6 @@ namespace MediaCore
     };
     using AudioEffectFilterHolder = std::shared_ptr<AudioEffectFilter>;
 
-    AudioEffectFilterHolder CreateAudioEffectFilter(const std::string& loggerName = "");
-    Logger::ALogger* GetAudioEffectFilterLogger();
+    MEDIACORE_API AudioEffectFilterHolder CreateAudioEffectFilter(const std::string& loggerName = "");
+    MEDIACORE_API Logger::ALogger* GetAudioEffectFilterLogger();
 }

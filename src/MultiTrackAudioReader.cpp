@@ -65,6 +65,7 @@ public:
         m_frameSize = outChannels*4;  // for now, output sample format only supports float32 data type, thus 4 bytes per sample.
         m_isTrackOutputPlanar = av_sample_fmt_is_planar(m_trackOutSmpfmt);
         m_matAvfrmCvter = new AudioImMatAVFrameConverter();
+        m_mixOutDataType = GetDataTypeFromSampleFormat(m_mixOutSmpfmt);
 
         m_aeFilter = CreateAudioEffectFilter("AEFilter#mix");
         if (!m_aeFilter->Init(
@@ -733,6 +734,7 @@ private:
                         {
                             memcpy(amat.data, outfrm->data[0], outfrm->linesize[0]);
                             amat.time_stamp = ConvertPtsToTs(outfrm->pts);
+                            amat.type = m_mixOutDataType;
                             amat.flags = IM_MAT_FLAGS_AUDIO_FRAME;
                             amat.rate = { (int)m_outSampleRate, 1 };
                             amat.elempack = outChannels;
@@ -802,6 +804,7 @@ private:
     recursive_mutex m_apiLock;
     thread m_mixingThread;
     AVSampleFormat m_mixOutSmpfmt{AV_SAMPLE_FMT_FLT};
+    ImDataType m_mixOutDataType;
 
     list<AudioTrackHolder> m_tracks;
     recursive_mutex m_trackLock;

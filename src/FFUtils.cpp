@@ -99,6 +99,41 @@ ImColorFormat ConvertPixelFormatToColorFormat(AVPixelFormat pixfmt)
     return clrfmt;
 }
 
+ImDataType GetDataTypeFromSampleFormat(AVSampleFormat smpfmt)
+{
+    ImDataType dtype;
+    switch (smpfmt)
+    {
+    case AV_SAMPLE_FMT_U8:
+    case AV_SAMPLE_FMT_U8P:
+        dtype = IM_DT_INT8;
+        break;
+    case AV_SAMPLE_FMT_S16:
+    case AV_SAMPLE_FMT_S16P:
+        dtype = IM_DT_INT16;
+        break;
+    case AV_SAMPLE_FMT_S32:
+    case AV_SAMPLE_FMT_S32P:
+        dtype = IM_DT_INT32;
+        break;
+    case AV_SAMPLE_FMT_FLT:
+    case AV_SAMPLE_FMT_FLTP:
+        dtype = IM_DT_FLOAT32;
+        break;
+    case AV_SAMPLE_FMT_DBL:
+    case AV_SAMPLE_FMT_DBLP:
+        dtype = IM_DT_FLOAT64;
+        break;
+    case AV_SAMPLE_FMT_S64:
+    case AV_SAMPLE_FMT_S64P:
+        dtype = IM_DT_INT64;
+        break;
+    default:
+        dtype = IM_DT_UNDEFINED;
+    }
+    return dtype;
+}
+
 static ImColorFormat FindPresentColorFormatForPixelFormat(AVPixelFormat pixfmt)
 {
     const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get(pixfmt);

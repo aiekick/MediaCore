@@ -81,6 +81,7 @@ public:
         }
 
         m_smpfmt = smpfmt;
+        m_matDt = GetDataTypeFromSampleFormat(smpfmt);
         m_channels = channels;
         m_sampleRate = sampleRate;
         m_blockAlign = channels*av_get_bytes_per_sample(smpfmt);
@@ -115,7 +116,7 @@ public:
             m_errMsg = oss.str();
             return false;
         }
-        m_logger->Log(DEBUG) << "Get incoming mat: ts=" << in.time_stamp << "; avfrm: pts=" << pts << endl;
+        // m_logger->Log(DEBUG) << "Get incoming mat: ts=" << in.time_stamp << "; avfrm: pts=" << pts << endl;
 
         UpdateFilterParameters();
 
@@ -174,10 +175,11 @@ public:
                     double ts = (double)avfrm->pts/m_sampleRate;
                     if (m_matCvter.ConvertAVFrameToImMat(avfrm.get(), m, ts))
                     {
-                        m_logger->Log(DEBUG) << "Add output avfrm: pts=" << avfrm->pts << "; mat: ts=" << m.time_stamp << endl;
+                        // m_logger->Log(DEBUG) << "Add output avfrm: pts=" << avfrm->pts << "; mat: ts=" << m.time_stamp << endl;
+                        m.type = m_matDt;
                         m.flags = IM_MAT_FLAGS_AUDIO_FRAME;
                         m.rate = { (int)m_sampleRate, 1 };
-                        m.elempack = m_channels;
+                        m.elempack = m_isPlanar ? 1 : m_channels;
                         out.push_back(m);
                     }
                     else
@@ -690,6 +692,7 @@ private:
     bool m_inited{false};
     bool m_passThrough{false};
     AVSampleFormat m_smpfmt{AV_SAMPLE_FMT_NONE};
+    ImDataType m_matDt;
     uint32_t m_channels{0};
     uint32_t m_sampleRate{0};
     uint32_t m_blockAlign{0};
