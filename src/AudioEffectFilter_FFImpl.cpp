@@ -175,6 +175,9 @@ public:
                     if (m_matCvter.ConvertAVFrameToImMat(avfrm.get(), m, ts))
                     {
                         m_logger->Log(DEBUG) << "Add output avfrm: pts=" << avfrm->pts << "; mat: ts=" << m.time_stamp << endl;
+                        m.flags = IM_MAT_FLAGS_AUDIO_FRAME;
+                        m.rate = { (int)m_sampleRate, 1 };
+                        m.elempack = m_channels;
                         out.push_back(m);
                     }
                     else

@@ -733,6 +733,7 @@ private:
                         {
                             memcpy(amat.data, outfrm->data[0], outfrm->linesize[0]);
                             amat.time_stamp = ConvertPtsToTs(outfrm->pts);
+                            amat.flags = IM_MAT_FLAGS_AUDIO_FRAME;
                             amat.rate = { (int)m_outSampleRate, 1 };
                             amat.elempack = outChannels;
                             av_frame_unref(outfrm.get());
@@ -775,6 +776,7 @@ private:
                     amat.create((int)m_outSamplesPerFrame, 1, outChannels, (size_t)4);
                     memset(amat.data, 0, amat.total()*amat.elemsize);
                     amat.time_stamp = (double)m_samplePos/m_outSampleRate;
+                    amat.flags = IM_MAT_FLAGS_AUDIO_FRAME;
                     amat.rate = { (int)m_outSampleRate, 1 };
                     amat.elempack = outChannels;
                     if (m_readForward)
