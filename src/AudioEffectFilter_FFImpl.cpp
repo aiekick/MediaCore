@@ -107,13 +107,15 @@ public:
         }
 
         SelfFreeAVFramePtr avfrm = AllocSelfFreeAVFramePtr();
-        if (!m_matCvter.ConvertImMatToAVFrame(in, avfrm.get(), m_nbSamples))
+        int64_t pts = (int64_t)(in.time_stamp*m_sampleRate);
+        if (!m_matCvter.ConvertImMatToAVFrame(in, avfrm.get(), pts))
         {
             ostringstream oss;
             oss << "FAILED to invoke AudioImMatAVFrameConverter::ConvertImMatToAVFrame()!";
             m_errMsg = oss.str();
             return false;
         }
+        m_logger->Log(DEBUG) << "Get incoming mat: ts=" << in.time_stamp << "; avfrm: pts=" << pts << endl;
 
         UpdateFilterParameters();
 
@@ -171,7 +173,10 @@ public:
                     ImGui::ImMat m;
                     double ts = (double)avfrm->pts/m_sampleRate;
                     if (m_matCvter.ConvertAVFrameToImMat(avfrm.get(), m, ts))
+                    {
+                        m_logger->Log(DEBUG) << "Add output avfrm: pts=" << avfrm->pts << "; mat: ts=" << m.time_stamp << endl;
                         out.push_back(m);
+                    }
                     else
                     {
                         ostringstream oss;
@@ -700,7 +705,6 @@ private:
     LimiterParams m_setLimiterParams, m_currLimiterParams;
 
     AudioImMatAVFrameConverter m_matCvter;
-    int64_t m_nbSamples{0};
     string m_errMsg;
 };
 
