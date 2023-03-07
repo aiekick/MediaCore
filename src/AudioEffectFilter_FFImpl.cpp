@@ -271,7 +271,7 @@ public:
 private:
     bool CreateFilterGraph(uint32_t composeFlags, const AVSampleFormat smpfmt, uint32_t channels, uint32_t sampleRate)
     {
-        if (composeFlags&(~PAN) == 0)
+        if ((composeFlags&~PAN) == 0)
         {
             m_useGeneralFg = false;
             return true;
