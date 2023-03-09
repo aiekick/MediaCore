@@ -3,6 +3,8 @@ project(MediaCore VERSION 0.1.0)
 
 option(MEDIACORE_STATIC              "Build MediaCore as static library" OFF)
 
+set(CMAKE_CXX_STANDARD 14)
+
 find_package(PkgConfig REQUIRED)
 
 # >>> include ffmpeg as dependency
@@ -30,7 +32,7 @@ pkg_search_module(FONTCONFIG REQUIRED fontconfig)
 # <<<
 
 # >>> include imgui as dependency (from source code)
-if (DEFINED BUILD_DEPENDENCY_IMGUI)
+if(DEFINED BUILD_DEPENDENCY_IMGUI)
 set(BUILD_DEPENDENCY_IMGUI ${BUILD_DEPENDENCY_IMGUI} CACHE BOOL "Choose whether or not to build the dependency project 'IMGUI' from source code.")
 else()
 set(BUILD_DEPENDENCY_IMGUI ON CACHE BOOL "Choose whether or not to build the dependency project 'IMGUI' from source code.")
