@@ -1,4 +1,5 @@
 #include <sstream>
+#include <iostream>
 #include "AudioEffectFilter.h"
 #include "FFUtils.h"
 extern "C"
@@ -263,6 +264,22 @@ public:
         return m_setLimiterParams;
     }
 
+    bool SetGateParams(GateParams* params) override
+    {
+        if (!HasFilter(GATE))
+        {
+            m_errMsg = "CANNOT set 'GateParams' because this instance is NOT initialized with 'AudioEffectFilter::GATE' compose-flag!";
+            return false;
+        }
+        m_setGateParams = *params;
+        return true;
+    }
+
+    GateParams GetGateParams() const override
+    {
+        return m_setGateParams;
+    }
+
     string GetError() const override
     {
         return m_errMsg;
@@ -352,6 +369,12 @@ private:
         {
             if (!isFirstFilter) fgArgsOss << ","; else isFirstFilter = false;
             fgArgsOss << "alimiter=limit=" << m_currLimiterParams.limit << ":attack=" << m_currLimiterParams.attack << ":release=" << m_currLimiterParams.release;
+        }
+        if (CheckFilters(composeFlags, GATE))
+        {
+            if (!isFirstFilter) fgArgsOss << ","; else isFirstFilter = false;
+            fgArgsOss << "agate=threshold=" << m_currGateParams.threshold << ":range=" << m_currGateParams.range << ":ratio=" << m_currGateParams.ratio << ":attack="
+                << m_currGateParams.attack << ":release=" << m_currGateParams.release << ":makeup=" << m_currGateParams.makeup << ":knee=" << m_currGateParams.knee;
         }
         if (CheckFilters(composeFlags, PAN))
         {
@@ -605,6 +628,153 @@ private:
                 m_logger->Log(WARN) << m_errMsg << endl;
             }
         }
+        if (m_setGateParams.threshold != m_currGateParams.threshold)
+        {
+            m_logger->Log(DEBUG) << "Change GateParams::threshold: " << m_currGateParams.threshold << " -> " << m_setGateParams.threshold << " ... ";
+            char cmdArgs[32] = {0};
+            snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_setGateParams.threshold);
+            fferr = avfilter_graph_send_command(m_filterGraph, "agate", "threshold", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
+            if (fferr >= 0)
+            {
+                m_currGateParams.threshold = m_setGateParams.threshold;
+                m_logger->Log(DEBUG) << "Succeeded." << endl;
+            }
+            else
+            {
+                m_logger->Log(DEBUG) << "FAILED!" << endl;
+                ostringstream oss;
+                oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "agate" << "', cmd='" << "threshold"
+                    << "', arg='" << cmdArgs << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
+                m_errMsg = oss.str();
+                m_logger->Log(WARN) << m_errMsg << endl;
+            }
+        }
+        if (m_setGateParams.range != m_currGateParams.range)
+        {
+            m_logger->Log(DEBUG) << "Change GateParams::range: " << m_currGateParams.range << " -> " << m_setGateParams.range << " ... ";
+            char cmdArgs[32] = {0};
+            snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_setGateParams.range);
+            fferr = avfilter_graph_send_command(m_filterGraph, "agate", "range", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
+            if (fferr >= 0)
+            {
+                m_currGateParams.range = m_setGateParams.range;
+                m_logger->Log(DEBUG) << "Succeeded." << endl;
+            }
+            else
+            {
+                m_logger->Log(DEBUG) << "FAILED!" << endl;
+                ostringstream oss;
+                oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "agate" << "', cmd='" << "range"
+                    << "', arg='" << cmdArgs << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
+                m_errMsg = oss.str();
+                m_logger->Log(WARN) << m_errMsg << endl;
+            }
+        }
+        if (m_setGateParams.ratio != m_currGateParams.ratio)
+        {
+            m_logger->Log(DEBUG) << "Change GateParams::ratio: " << m_currGateParams.ratio << " -> " << m_setGateParams.ratio << " ... ";
+            char cmdArgs[32] = {0};
+            snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_setGateParams.ratio);
+            fferr = avfilter_graph_send_command(m_filterGraph, "agate", "ratio", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
+            if (fferr >= 0)
+            {
+                m_currGateParams.ratio = m_setGateParams.ratio;
+                m_logger->Log(DEBUG) << "Succeeded." << endl;
+            }
+            else
+            {
+                m_logger->Log(DEBUG) << "FAILED!" << endl;
+                ostringstream oss;
+                oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "agate" << "', cmd='" << "ratio"
+                    << "', arg='" << cmdArgs << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
+                m_errMsg = oss.str();
+                m_logger->Log(WARN) << m_errMsg << endl;
+            }
+        }
+        if (m_setGateParams.attack != m_currGateParams.attack)
+        {
+            m_logger->Log(DEBUG) << "Change GateParams::attack: " << m_currGateParams.attack << " -> " << m_setGateParams.attack << " ... ";
+            char cmdArgs[32] = {0};
+            snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_setGateParams.attack);
+            fferr = avfilter_graph_send_command(m_filterGraph, "agate", "attack", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
+            if (fferr >= 0)
+            {
+                m_currGateParams.attack = m_setGateParams.attack;
+                m_logger->Log(DEBUG) << "Succeeded." << endl;
+            }
+            else
+            {
+                m_logger->Log(DEBUG) << "FAILED!" << endl;
+                ostringstream oss;
+                oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "agate" << "', cmd='" << "attack"
+                    << "', arg='" << cmdArgs << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
+                m_errMsg = oss.str();
+                m_logger->Log(WARN) << m_errMsg << endl;
+            }
+        }
+        if (m_setGateParams.release != m_currGateParams.release)
+        {
+            m_logger->Log(DEBUG) << "Change GateParams::release: " << m_currGateParams.release << " -> " << m_setGateParams.release << " ... ";
+            char cmdArgs[32] = {0};
+            snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_setGateParams.release);
+            fferr = avfilter_graph_send_command(m_filterGraph, "agate", "release", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
+            if (fferr >= 0)
+            {
+                m_currGateParams.release = m_setGateParams.release;
+                m_logger->Log(DEBUG) << "Succeeded." << endl;
+            }
+            else
+            {
+                m_logger->Log(DEBUG) << "FAILED!" << endl;
+                ostringstream oss;
+                oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "agate" << "', cmd='" << "release"
+                    << "', arg='" << cmdArgs << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
+                m_errMsg = oss.str();
+                m_logger->Log(WARN) << m_errMsg << endl;
+            }
+        }
+        if (m_setGateParams.makeup != m_currGateParams.makeup)
+        {
+            m_logger->Log(DEBUG) << "Change GateParams::makeup: " << m_currGateParams.makeup << " -> " << m_setGateParams.makeup << " ... ";
+            char cmdArgs[32] = {0};
+            snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_setGateParams.makeup);
+            fferr = avfilter_graph_send_command(m_filterGraph, "agate", "makeup", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
+            if (fferr >= 0)
+            {
+                m_currGateParams.makeup = m_setGateParams.makeup;
+                m_logger->Log(DEBUG) << "Succeeded." << endl;
+            }
+            else
+            {
+                m_logger->Log(DEBUG) << "FAILED!" << endl;
+                ostringstream oss;
+                oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "agate" << "', cmd='" << "makeup"
+                    << "', arg='" << cmdArgs << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
+                m_errMsg = oss.str();
+                m_logger->Log(WARN) << m_errMsg << endl;
+            }
+        }
+        if (m_setGateParams.knee != m_currGateParams.knee)
+        {
+            m_logger->Log(DEBUG) << "Change GateParams::knee: " << m_currGateParams.knee << " -> " << m_setGateParams.knee << " ... ";
+            char cmdArgs[32] = {0};
+            snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_setGateParams.knee);
+            fferr = avfilter_graph_send_command(m_filterGraph, "agate", "knee", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
+            if (fferr >= 0)
+            {
+                m_currGateParams.knee = m_setGateParams.knee;
+                m_logger->Log(DEBUG) << "Succeeded." << endl;
+            }
+            else
+            {
+                m_logger->Log(DEBUG) << "FAILED!" << endl;
+                ostringstream oss;
+                oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "agate" << "', cmd='" << "knee"
+                    << "', arg='" << cmdArgs << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
+                m_errMsg = oss.str();
+                m_logger->Log(WARN) << m_errMsg << endl;
+            }
+        }
         if (m_setLimiterParams.limit != m_currLimiterParams.limit)
         {
             m_logger->Log(DEBUG) << "Change LimiterParams::limit: " << m_currLimiterParams.limit << " -> " << m_setLimiterParams.limit << " ... ";
@@ -683,6 +853,7 @@ private:
 
     bool CheckFilters(uint32_t composeFlags, uint32_t checkFlags) const
     {
+        std::cout << (composeFlags&checkFlags) << std::endl;
         return (composeFlags&checkFlags) == checkFlags;
     }
 
@@ -709,6 +880,7 @@ private:
     VolumeParams m_setVolumeParams, m_currVolumeParams;
     PanParams m_setPanParams, m_currPanParams;
     LimiterParams m_setLimiterParams, m_currLimiterParams;
+    GateParams m_setGateParams, m_currGateParams;
 
     AudioImMatAVFrameConverter m_matCvter;
     string m_errMsg;
@@ -716,6 +888,7 @@ private:
 
 const uint32_t AudioEffectFilter::VOLUME        = 0x1;
 const uint32_t AudioEffectFilter::PAN           = 0x2;
+const uint32_t AudioEffectFilter::GATE          = 0x3;
 const uint32_t AudioEffectFilter::LIMITER       = 0x4;
 
 AudioEffectFilterHolder CreateAudioEffectFilter(const string& loggerName)

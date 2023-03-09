@@ -497,6 +497,46 @@ bool Application_Frame(void * handle, bool app_will_quit)
 
         ImGui::Spacing();
         ImGui::BeginGroup();
+        // Master Gate
+        aeFilter = g_mtAudReader->GetAudioEffectFilter();
+        AudioEffectFilter::GateParams gateParams = aeFilter->GetGateParams();
+        valMin = 0; valMax = 1;
+        // Track gate
+        audTrackIdx = 1;
+        for (auto trackIter = g_mtAudReader->TrackListBegin(); trackIter != g_mtAudReader->TrackListEnd(); trackIter++)
+        {
+            ImGui::SameLine();
+            labeloss.str(""); labeloss << "Gate.Th" << audTrackIdx++;
+            label = labeloss.str();
+            aeFilter = (*trackIter)->GetAudioEffectFilter();
+            gateParams = aeFilter->GetGateParams();
+            value = gateParams.threshold;
+            if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+            {
+                gateParams.threshold = value;
+                aeFilter->SetGateParams(&gateParams);
+            }
+        }
+        audTrackIdx = 1;
+        valMin = 1; valMax = 9000;
+        for (auto trackIter = g_mtAudReader->TrackListBegin(); trackIter != g_mtAudReader->TrackListEnd(); trackIter++)
+        {
+            ImGui::SameLine();
+            labeloss.str(""); labeloss << "Gate.Ra" << audTrackIdx++;
+            label = labeloss.str();
+            aeFilter = (*trackIter)->GetAudioEffectFilter();
+            gateParams = aeFilter->GetGateParams();
+            value = gateParams.ratio;
+            if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+            {
+                gateParams.ratio = value;
+                aeFilter->SetGateParams(&gateParams);
+            }
+        }
+        ImGui::EndGroup();
+
+        ImGui::Spacing();
+        ImGui::BeginGroup();
         // Master limiter
         aeFilter = g_mtAudReader->GetAudioEffectFilter();
         AudioEffectFilter::LimiterParams limiterParams = aeFilter->GetLimiterParams();
