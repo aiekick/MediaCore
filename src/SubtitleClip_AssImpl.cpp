@@ -19,10 +19,10 @@ SubtitleImage SubtitleClip_AssImpl::Image(int64_t timeOffset)
     if (timeOffset < 0 || timeOffset >= Duration())
         return SubtitleImage();
 
-    auto iter = m_renderedImages.find(timeOffset);
+    auto iter = m_renderedImages.find(StartTime()+timeOffset);
     if (iter == m_renderedImages.end())
     {
-        int64_t pos = StartTime()+timeOffset;
+        int64_t pos = /*StartTime()+*/timeOffset;
         for (int i = 0; i < m_keyPoints.GetCurveCount(); i++)
         {
             auto name = m_keyPoints.GetCurveName(i);
