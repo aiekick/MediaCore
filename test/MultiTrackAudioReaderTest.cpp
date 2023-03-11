@@ -497,7 +497,61 @@ bool Application_Frame(void * handle, bool app_will_quit)
 
         ImGui::Spacing();
         ImGui::BeginGroup();
-        // Master Gate
+        aeFilter = g_mtAudReader->GetAudioEffectFilter();
+        AudioEffectFilter::CompressorParams compressorParams = aeFilter->GetCompressorParams();
+        valMin = 0.00097563; valMax = 1;
+        // Track gate
+        audTrackIdx = 1;
+        for (auto trackIter = g_mtAudReader->TrackListBegin(); trackIter != g_mtAudReader->TrackListEnd(); trackIter++)
+        {
+            ImGui::SameLine();
+            labeloss.str(""); labeloss << "CPR.Th" << audTrackIdx++;
+            label = labeloss.str();
+            aeFilter = (*trackIter)->GetAudioEffectFilter();
+            compressorParams = aeFilter->GetCompressorParams();
+            value = compressorParams.threshold;
+            if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+            {
+                compressorParams.threshold = value;
+                aeFilter->SetCompressorParams(&compressorParams);
+            }
+        }
+        audTrackIdx = 1;
+        valMin = 1; valMax = 20;
+        for (auto trackIter = g_mtAudReader->TrackListBegin(); trackIter != g_mtAudReader->TrackListEnd(); trackIter++)
+        {
+            ImGui::SameLine();
+            labeloss.str(""); labeloss << "CPR.Ra" << audTrackIdx++;
+            label = labeloss.str();
+            aeFilter = (*trackIter)->GetAudioEffectFilter();
+            compressorParams = aeFilter->GetCompressorParams();
+            value = compressorParams.ratio;
+            if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+            {
+                compressorParams.ratio = value;
+                aeFilter->SetCompressorParams(&compressorParams);
+            }
+        }
+        audTrackIdx = 1;
+        valMin = 0.015625; valMax = 64;
+        for (auto trackIter = g_mtAudReader->TrackListBegin(); trackIter != g_mtAudReader->TrackListEnd(); trackIter++)
+        {
+            ImGui::SameLine();
+            labeloss.str(""); labeloss << "CPR.lv_in" << audTrackIdx++;
+            label = labeloss.str();
+            aeFilter = (*trackIter)->GetAudioEffectFilter();
+            compressorParams = aeFilter->GetCompressorParams();
+            value = compressorParams.level_sc;
+            if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+            {
+                compressorParams.level_sc = value;
+                aeFilter->SetCompressorParams(&compressorParams);
+            }
+        }
+        ImGui::EndGroup();
+
+        ImGui::Spacing();
+        ImGui::BeginGroup();
         aeFilter = g_mtAudReader->GetAudioEffectFilter();
         AudioEffectFilter::GateParams gateParams = aeFilter->GetGateParams();
         valMin = 0; valMax = 1;

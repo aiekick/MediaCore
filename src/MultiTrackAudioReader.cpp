@@ -69,7 +69,7 @@ public:
 
         m_aeFilter = CreateAudioEffectFilter("AEFilter#mix");
         if (!m_aeFilter->Init(
-            AudioEffectFilter::VOLUME|AudioEffectFilter::GATE|AudioEffectFilter::LIMITER|AudioEffectFilter::PAN,
+            AudioEffectFilter::VOLUME|AudioEffectFilter::COMPRESSOR|AudioEffectFilter::GATE|AudioEffectFilter::LIMITER|AudioEffectFilter::PAN,
             av_get_sample_fmt_name(m_mixOutSmpfmt), outChannels, outSampleRate))
         {
             m_errMsg = "FAILED to initialize AudioEffectFilter!";

@@ -280,6 +280,22 @@ public:
         return m_setGateParams;
     }
 
+    bool SetCompressorParams(CompressorParams* params) override
+    {
+        if (!HasFilter(COMPRESSOR))
+        {
+            m_errMsg = "CANNOT set 'CompressorParams' because this instance is NOT initialized with 'AudioEffectFilter::COMPRESSOR' compose-flag!";
+            return false;
+        }
+        m_setCompressorParams = *params;
+        return true;
+    }
+
+    CompressorParams GetCompressorParams() const override
+    {
+        return m_setCompressorParams;
+    }
+
     string GetError() const override
     {
         return m_errMsg;
@@ -375,6 +391,13 @@ private:
             if (!isFirstFilter) fgArgsOss << ","; else isFirstFilter = false;
             fgArgsOss << "agate=threshold=" << m_currGateParams.threshold << ":range=" << m_currGateParams.range << ":ratio=" << m_currGateParams.ratio << ":attack="
                 << m_currGateParams.attack << ":release=" << m_currGateParams.release << ":makeup=" << m_currGateParams.makeup << ":knee=" << m_currGateParams.knee;
+        }
+        if (CheckFilters(composeFlags, COMPRESSOR))
+        {
+            if (!isFirstFilter) fgArgsOss << ","; else isFirstFilter = false;
+            fgArgsOss << "acompressor=threshold=" << m_currCompressorParams.threshold << ":ratio=" << m_currCompressorParams.ratio << ":knee="
+                << m_currCompressorParams.knee << ":mix=" << m_currCompressorParams.mix << ":attack=" << m_currCompressorParams.attack << ":release="
+                << m_currCompressorParams.release << ":makeup=" << m_currCompressorParams.makeup << ":level_in=" << m_currCompressorParams.level_sc;
         }
         if (CheckFilters(composeFlags, PAN))
         {
@@ -628,6 +651,175 @@ private:
                 m_logger->Log(WARN) << m_errMsg << endl;
             }
         }
+        if (m_setCompressorParams.threshold != m_currCompressorParams.threshold)
+        {
+            m_logger->Log(DEBUG) << "Change CompressorParams::threshold: " << m_currCompressorParams.threshold << " -> " << m_setCompressorParams.threshold << " ... ";
+            char cmdArgs[32] = {0};
+            snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_setCompressorParams.threshold);
+            fferr = avfilter_graph_send_command(m_filterGraph, "acompressor", "threshold", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
+            if (fferr >= 0)
+            {
+                m_currCompressorParams.threshold = m_setCompressorParams.threshold;
+                m_logger->Log(DEBUG) << "Succeeded." << endl;
+            }
+            else
+            {
+                m_logger->Log(DEBUG) << "FAILED!" << endl;
+                ostringstream oss;
+                oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "acompressor" << "', cmd='" << "threshold"
+                    << "', arg='" << cmdArgs << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
+                m_errMsg = oss.str();
+                m_logger->Log(WARN) << m_errMsg << endl;
+            }
+        }
+        if (m_setCompressorParams.ratio != m_currCompressorParams.ratio)
+        {
+            m_logger->Log(DEBUG) << "Change CompressorParams::ratio: " << m_currCompressorParams.ratio << " -> " << m_setCompressorParams.ratio << " ... ";
+            char cmdArgs[32] = {0};
+            snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_setCompressorParams.ratio);
+            fferr = avfilter_graph_send_command(m_filterGraph, "acompressor", "ratio", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
+            if (fferr >= 0)
+            {
+                m_currCompressorParams.ratio = m_setCompressorParams.ratio;
+                m_logger->Log(DEBUG) << "Succeeded." << endl;
+            }
+            else
+            {
+                m_logger->Log(DEBUG) << "FAILED!" << endl;
+                ostringstream oss;
+                oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "acompressor" << "', cmd='" << "ratio"
+                    << "', arg='" << cmdArgs << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
+                m_errMsg = oss.str();
+                m_logger->Log(WARN) << m_errMsg << endl;
+            }
+        }
+        if (m_setCompressorParams.knee != m_currCompressorParams.knee)
+        {
+            m_logger->Log(DEBUG) << "Change CompressorParams::knee: " << m_currCompressorParams.knee << " -> " << m_setCompressorParams.knee << " ... ";
+            char cmdArgs[32] = {0};
+            snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_setCompressorParams.knee);
+            fferr = avfilter_graph_send_command(m_filterGraph, "acompressor", "knee", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
+            if (fferr >= 0)
+            {
+                m_currCompressorParams.knee = m_setCompressorParams.knee;
+                m_logger->Log(DEBUG) << "Succeeded." << endl;
+            }
+            else
+            {
+                m_logger->Log(DEBUG) << "FAILED!" << endl;
+                ostringstream oss;
+                oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "acompressor" << "', cmd='" << "knee"
+                    << "', arg='" << cmdArgs << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
+                m_errMsg = oss.str();
+                m_logger->Log(WARN) << m_errMsg << endl;
+            }
+        }
+        if (m_setCompressorParams.mix != m_currCompressorParams.mix)
+        {
+            m_logger->Log(DEBUG) << "Change CompressorParams::mix: " << m_currCompressorParams.mix << " -> " << m_setCompressorParams.mix << " ... ";
+            char cmdArgs[32] = {0};
+            snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_setCompressorParams.mix);
+            fferr = avfilter_graph_send_command(m_filterGraph, "acompressor", "mix", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
+            if (fferr >= 0)
+            {
+                m_currCompressorParams.mix = m_setCompressorParams.mix;
+                m_logger->Log(DEBUG) << "Succeeded." << endl;
+            }
+            else
+            {
+                m_logger->Log(DEBUG) << "FAILED!" << endl;
+                ostringstream oss;
+                oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "acompressor" << "', cmd='" << "mix"
+                    << "', arg='" << cmdArgs << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
+                m_errMsg = oss.str();
+                m_logger->Log(WARN) << m_errMsg << endl;
+            }
+        }
+        if (m_setCompressorParams.attack != m_currCompressorParams.attack)
+        {
+            m_logger->Log(DEBUG) << "Change CompressorParams::attack: " << m_currCompressorParams.attack << " -> " << m_setCompressorParams.attack << " ... ";
+            char cmdArgs[32] = {0};
+            snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_setCompressorParams.attack);
+            fferr = avfilter_graph_send_command(m_filterGraph, "acompressor", "attack", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
+            if (fferr >= 0)
+            {
+                m_currCompressorParams.attack = m_setCompressorParams.attack;
+                m_logger->Log(DEBUG) << "Succeeded." << endl;
+            }
+            else
+            {
+                m_logger->Log(DEBUG) << "FAILED!" << endl;
+                ostringstream oss;
+                oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "acompressor" << "', cmd='" << "attack"
+                    << "', arg='" << cmdArgs << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
+                m_errMsg = oss.str();
+                m_logger->Log(WARN) << m_errMsg << endl;
+            }
+        }
+        if (m_setCompressorParams.release != m_currCompressorParams.release)
+        {
+            m_logger->Log(DEBUG) << "Change CompressorParams::release: " << m_currCompressorParams.release << " -> " << m_setCompressorParams.release << " ... ";
+            char cmdArgs[32] = {0};
+            snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_setCompressorParams.release);
+            fferr = avfilter_graph_send_command(m_filterGraph, "acompressor", "release", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
+            if (fferr >= 0)
+            {
+                m_currCompressorParams.release = m_setCompressorParams.release;
+                m_logger->Log(DEBUG) << "Succeeded." << endl;
+            }
+            else
+            {
+                m_logger->Log(DEBUG) << "FAILED!" << endl;
+                ostringstream oss;
+                oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "acompressor" << "', cmd='" << "release"
+                    << "', arg='" << cmdArgs << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
+                m_errMsg = oss.str();
+                m_logger->Log(WARN) << m_errMsg << endl;
+            }
+        }
+        if (m_setCompressorParams.makeup != m_currCompressorParams.makeup)
+        {
+            m_logger->Log(DEBUG) << "Change CompressorParams::makeup: " << m_currCompressorParams.makeup << " -> " << m_setCompressorParams.makeup << " ... ";
+            char cmdArgs[32] = {0};
+            snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_setCompressorParams.makeup);
+            fferr = avfilter_graph_send_command(m_filterGraph, "acompressor", "makeup", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
+            if (fferr >= 0)
+            {
+                m_currCompressorParams.makeup = m_setCompressorParams.makeup;
+                m_logger->Log(DEBUG) << "Succeeded." << endl;
+            }
+            else
+            {
+                m_logger->Log(DEBUG) << "FAILED!" << endl;
+                ostringstream oss;
+                oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "acompressor" << "', cmd='" << "makeup"
+                    << "', arg='" << cmdArgs << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
+                m_errMsg = oss.str();
+                m_logger->Log(WARN) << m_errMsg << endl;
+            }
+        }
+        if (m_setCompressorParams.level_sc != m_currCompressorParams.level_sc)
+        {
+            m_logger->Log(DEBUG) << "Change CompressorParams::level_sc: " << m_currCompressorParams.level_sc << " -> " << m_setCompressorParams.level_sc << " ... ";
+            char cmdArgs[32] = {0};
+            snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_setCompressorParams.level_sc);
+            fferr = avfilter_graph_send_command(m_filterGraph, "acompressor", "level_in", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
+            if (fferr >= 0)
+            {
+                m_currCompressorParams.level_sc = m_setCompressorParams.level_sc;
+                m_logger->Log(DEBUG) << "Succeeded." << endl;
+            }
+            else
+            {
+                m_logger->Log(DEBUG) << "FAILED!" << endl;
+                ostringstream oss;
+                oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "acompressor" << "', cmd='" << "level_in"
+                    << "', arg='" << cmdArgs << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
+                m_errMsg = oss.str();
+                m_logger->Log(WARN) << m_errMsg << endl;
+            }
+        }
+
         if (m_setGateParams.threshold != m_currGateParams.threshold)
         {
             m_logger->Log(DEBUG) << "Change GateParams::threshold: " << m_currGateParams.threshold << " -> " << m_setGateParams.threshold << " ... ";
@@ -881,6 +1073,7 @@ private:
     PanParams m_setPanParams, m_currPanParams;
     LimiterParams m_setLimiterParams, m_currLimiterParams;
     GateParams m_setGateParams, m_currGateParams;
+    CompressorParams m_setCompressorParams, m_currCompressorParams;
 
     AudioImMatAVFrameConverter m_matCvter;
     string m_errMsg;
@@ -890,6 +1083,8 @@ const uint32_t AudioEffectFilter::VOLUME        = 0x1;
 const uint32_t AudioEffectFilter::PAN           = 0x2;
 const uint32_t AudioEffectFilter::GATE          = 0x3;
 const uint32_t AudioEffectFilter::LIMITER       = 0x4;
+const uint32_t AudioEffectFilter::EQUALIZER     = 0x5;
+const uint32_t AudioEffectFilter::COMPRESSOR    = 0x6;
 
 AudioEffectFilterHolder CreateAudioEffectFilter(const string& loggerName)
 {
