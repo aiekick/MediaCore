@@ -497,6 +497,29 @@ bool Application_Frame(void * handle, bool app_will_quit)
 
         ImGui::Spacing();
         ImGui::BeginGroup();
+        valMin = -12; valMax = 12;
+        // Track gate
+        audTrackIdx = 1;
+        for (auto trackIter = g_mtAudReader->TrackListBegin(); trackIter != g_mtAudReader->TrackListEnd(); trackIter++)
+        {
+            aeFilter = (*trackIter)->GetAudioEffectFilter();
+            for (int idx=0; idx<aeFilter->GetEqualizerParamsListLength(); idx++){
+                ImGui::SameLine();
+                labeloss.str(""); labeloss << "EQL.g" << idx+1 << "." << audTrackIdx++;
+                label = labeloss.str();
+                AudioEffectFilter::EqualizerParams equalizerParams = aeFilter->GetOneEqualizerParams(idx);
+                value = equalizerParams.gain;
+                if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+                {
+                    equalizerParams.gain = value;
+                    aeFilter->SetOneEqualizerParams(&equalizerParams, idx);
+                }
+            }
+        }
+        ImGui::EndGroup();
+
+        ImGui::Spacing();
+        ImGui::BeginGroup();
         aeFilter = g_mtAudReader->GetAudioEffectFilter();
         AudioEffectFilter::CompressorParams compressorParams = aeFilter->GetCompressorParams();
         valMin = 0.00097563; valMax = 1;

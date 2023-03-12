@@ -72,13 +72,15 @@ namespace MediaCore
         virtual bool SetCompressorParams(CompressorParams* params) = 0;
         virtual CompressorParams GetCompressorParams() const = 0;
 
-        // struct EqualizerParams
-        // {
-        //     uint32_t centerFreq;  // in Hz
-        //     uint32_t bandWidth;  // in Hz
-        //     int32_t gain;  // in db
-        // };
-        // audio_band_config mBandCfg[10];
+        struct EqualizerParams
+        {
+            uint32_t centerFreq;
+            uint32_t bandWidth;
+            int32_t gain;
+        };
+        virtual bool SetOneEqualizerParams(EqualizerParams* params, int idx) = 0;
+        virtual EqualizerParams GetOneEqualizerParams(int idx) const = 0;
+        virtual int GetEqualizerParamsListLength() const = 0;
 
         virtual std::string GetError() const = 0;
     };
