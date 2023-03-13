@@ -114,7 +114,7 @@ void Application_Initialize(void** handle)
     GetDefaultLogger()
         ->SetShowLevels(DEBUG);
     GetMediaReaderLogger()
-        ->SetShowLevels(DEBUG);
+        ->SetShowLevels(INFO);
     GetMultiTrackAudioReaderLogger()
         ->SetShowLevels(DEBUG);
 
@@ -497,118 +497,84 @@ bool Application_Frame(void * handle, bool app_will_quit)
 
         ImGui::Spacing();
         ImGui::BeginGroup();
+        // Master equalizer
+        aeFilter = g_mtAudReader->GetAudioEffectFilter();
         valMin = -12; valMax = 12;
-        // Track gate
-        audTrackIdx = 1;
-        for (auto trackIter = g_mtAudReader->TrackListBegin(); trackIter != g_mtAudReader->TrackListEnd(); trackIter++)
-        {
-            aeFilter = (*trackIter)->GetAudioEffectFilter();
-            for (int idx=0; idx<aeFilter->GetEqualizerParamsListLength(); idx++){
-                ImGui::SameLine();
-                labeloss.str(""); labeloss << "EQL.g" << idx+1 << "." << audTrackIdx++;
-                label = labeloss.str();
-                AudioEffectFilter::EqualizerParams equalizerParams = aeFilter->GetOneEqualizerParams(idx);
-                value = equalizerParams.gain;
-                if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
-                {
-                    equalizerParams.gain = value;
-                    aeFilter->SetOneEqualizerParams(&equalizerParams, idx);
-                }
+        for (int i=0; i < aeFilter->GetEqualizerParamsListLength(); i++) {
+            ImGui::SameLine();
+            labeloss.str(""); labeloss << "EQL.g" << i+1 << ".M";
+            label = labeloss.str();
+            AudioEffectFilter::EqualizerParams equalizerParams = aeFilter->GetEqualizerParamsByIndex(i);
+            value = equalizerParams.gain;
+            if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+            {
+                equalizerParams.gain = value;
+                aeFilter->SetEqualizerParamsByIndex(&equalizerParams, i);
             }
         }
         ImGui::EndGroup();
 
         ImGui::Spacing();
         ImGui::BeginGroup();
+        // Master compressor
         aeFilter = g_mtAudReader->GetAudioEffectFilter();
         AudioEffectFilter::CompressorParams compressorParams = aeFilter->GetCompressorParams();
+        ImGui::SameLine();
+        labeloss.str(""); labeloss << "CPR.Th.M";
+        label = labeloss.str();
         valMin = 0.00097563; valMax = 1;
-        // Track gate
-        audTrackIdx = 1;
-        for (auto trackIter = g_mtAudReader->TrackListBegin(); trackIter != g_mtAudReader->TrackListEnd(); trackIter++)
+        value = compressorParams.threshold;
+        if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
         {
-            ImGui::SameLine();
-            labeloss.str(""); labeloss << "CPR.Th" << audTrackIdx++;
-            label = labeloss.str();
-            aeFilter = (*trackIter)->GetAudioEffectFilter();
-            compressorParams = aeFilter->GetCompressorParams();
-            value = compressorParams.threshold;
-            if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
-            {
-                compressorParams.threshold = value;
-                aeFilter->SetCompressorParams(&compressorParams);
-            }
+            compressorParams.threshold = value;
+            aeFilter->SetCompressorParams(&compressorParams);
         }
-        audTrackIdx = 1;
+        ImGui::SameLine();
+        labeloss.str(""); labeloss << "CPR.Ra.M";
+        label = labeloss.str();
         valMin = 1; valMax = 20;
-        for (auto trackIter = g_mtAudReader->TrackListBegin(); trackIter != g_mtAudReader->TrackListEnd(); trackIter++)
+        value = compressorParams.ratio;
+        if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
         {
-            ImGui::SameLine();
-            labeloss.str(""); labeloss << "CPR.Ra" << audTrackIdx++;
-            label = labeloss.str();
-            aeFilter = (*trackIter)->GetAudioEffectFilter();
-            compressorParams = aeFilter->GetCompressorParams();
-            value = compressorParams.ratio;
-            if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
-            {
-                compressorParams.ratio = value;
-                aeFilter->SetCompressorParams(&compressorParams);
-            }
+            compressorParams.ratio = value;
+            aeFilter->SetCompressorParams(&compressorParams);
         }
-        audTrackIdx = 1;
+        ImGui::SameLine();
+        labeloss.str(""); labeloss << "CPR.lv_in.M";
+        label = labeloss.str();
         valMin = 0.015625; valMax = 64;
-        for (auto trackIter = g_mtAudReader->TrackListBegin(); trackIter != g_mtAudReader->TrackListEnd(); trackIter++)
+        value = compressorParams.level_sc;
+        if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
         {
-            ImGui::SameLine();
-            labeloss.str(""); labeloss << "CPR.lv_in" << audTrackIdx++;
-            label = labeloss.str();
-            aeFilter = (*trackIter)->GetAudioEffectFilter();
-            compressorParams = aeFilter->GetCompressorParams();
-            value = compressorParams.level_sc;
-            if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
-            {
-                compressorParams.level_sc = value;
-                aeFilter->SetCompressorParams(&compressorParams);
-            }
+            compressorParams.level_sc = value;
+            aeFilter->SetCompressorParams(&compressorParams);
         }
         ImGui::EndGroup();
 
         ImGui::Spacing();
         ImGui::BeginGroup();
+        // Master agate
         aeFilter = g_mtAudReader->GetAudioEffectFilter();
         AudioEffectFilter::GateParams gateParams = aeFilter->GetGateParams();
+        ImGui::SameLine();
+        labeloss.str(""); labeloss << "Gate.Th.M";
+        label = labeloss.str();
         valMin = 0; valMax = 1;
-        // Track gate
-        audTrackIdx = 1;
-        for (auto trackIter = g_mtAudReader->TrackListBegin(); trackIter != g_mtAudReader->TrackListEnd(); trackIter++)
+        value = gateParams.threshold;
+        if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
         {
-            ImGui::SameLine();
-            labeloss.str(""); labeloss << "Gate.Th" << audTrackIdx++;
-            label = labeloss.str();
-            aeFilter = (*trackIter)->GetAudioEffectFilter();
-            gateParams = aeFilter->GetGateParams();
-            value = gateParams.threshold;
-            if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
-            {
-                gateParams.threshold = value;
-                aeFilter->SetGateParams(&gateParams);
-            }
+            gateParams.threshold = value;
+            aeFilter->SetGateParams(&gateParams);
         }
-        audTrackIdx = 1;
+        ImGui::SameLine();
+        labeloss.str(""); labeloss << "Gate.Ra.M";
+        label = labeloss.str();
         valMin = 1; valMax = 9000;
-        for (auto trackIter = g_mtAudReader->TrackListBegin(); trackIter != g_mtAudReader->TrackListEnd(); trackIter++)
+        value = gateParams.ratio;
+        if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
         {
-            ImGui::SameLine();
-            labeloss.str(""); labeloss << "Gate.Ra" << audTrackIdx++;
-            label = labeloss.str();
-            aeFilter = (*trackIter)->GetAudioEffectFilter();
-            gateParams = aeFilter->GetGateParams();
-            value = gateParams.ratio;
-            if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
-            {
-                gateParams.ratio = value;
-                aeFilter->SetGateParams(&gateParams);
-            }
+            gateParams.ratio = value;
+            aeFilter->SetGateParams(&gateParams);
         }
         ImGui::EndGroup();
 

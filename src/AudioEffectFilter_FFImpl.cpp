@@ -296,25 +296,34 @@ public:
         return m_setCompressorParams;
     }
 
-    bool SetOneEqualizerParams(EqualizerParams* params, int idx) override
+    bool SetEqualizerParamsByIndex(EqualizerParams* params, uint32_t index) override
     {
         if (!HasFilter(EQUALIZER))
         {
             m_errMsg = "CANNOT set 'EqualizerParams' because this instance is NOT initialized with 'AudioEffectFilter::EQUALIZER' compose-flag!";
             return false;
         }
-        m_setMultiEqualizerParams[idx] = *params;
+        m_setMultiEqualizerParamsList.at(index) = *params;
         return true;
     }
 
-    EqualizerParams GetOneEqualizerParams(int idx) const override
+    EqualizerParams GetEqualizerParamsByIndex(uint32_t index) const override
     {
-        return m_setMultiEqualizerParams[idx];
+        return m_setMultiEqualizerParamsList.at(index);
     }
 
     int GetEqualizerParamsListLength() const override
     {
-        return sizeof(m_setMultiEqualizerParams) / sizeof(m_setMultiEqualizerParams[0]);
+        return m_setMultiEqualizerParamsList.size();
+    }
+
+    EqualizerBandInfo GetEqualizerBandInfo() const override
+    {
+        EqualizerBandInfo eqBandInfo;
+        eqBandInfo.bandCount = DF_CENTER_FREQS.size();
+        eqBandInfo.centerFreqList = DF_CENTER_FREQS.data();
+        eqBandInfo.bandWidthList = DF_BAND_WTHS.data();
+        return eqBandInfo;
     }
 
     string GetError() const override
@@ -413,11 +422,12 @@ private:
             fgArgsOss << "agate=threshold=" << m_currGateParams.threshold << ":range=" << m_currGateParams.range << ":ratio=" << m_currGateParams.ratio << ":attack="
                 << m_currGateParams.attack << ":release=" << m_currGateParams.release << ":makeup=" << m_currGateParams.makeup << ":knee=" << m_currGateParams.knee;
         }
-        for (auto &m_currEQLParams : m_currMultiEqualizerParams) {
-            if (CheckFilters(composeFlags, EQUALIZER))
-            {
+        if (CheckFilters(composeFlags, EQUALIZER)) {
+            for (int i=0; i < DF_CENTER_FREQS.size(); i++) {
+                m_currMultiEqualizerParamsList.push_back({0});
+                m_setMultiEqualizerParamsList.push_back({0});
                 if (!isFirstFilter) fgArgsOss << ","; else isFirstFilter = false;
-                fgArgsOss << "equalizer=f=" << m_currEQLParams.centerFreq << ":t=h:width=" << m_currEQLParams.bandWidth << ":g=" << m_currEQLParams.gain;
+                fgArgsOss << "equalizer@" << i << "=f=" << DF_CENTER_FREQS[i] << ":t=h:w=" << DF_BAND_WTHS[i] << ":g=0";
             }
         }
         if (CheckFilters(composeFlags, COMPRESSOR))
@@ -848,57 +858,17 @@ private:
             }
         }
 
-        for (int idx=0; idx < GetEqualizerParamsListLength(); idx++){
-            auto &m_currEQLParams = m_currMultiEqualizerParams[idx];
-            auto &m_setEQLParams = m_setMultiEqualizerParams[idx];
-            if (m_setEQLParams.centerFreq != m_currEQLParams.centerFreq)
-            {
-                m_logger->Log(DEBUG) << "Change EqualizerParams::centerFreq: " << m_currEQLParams.centerFreq << " -> " << m_setEQLParams.centerFreq << " ... ";
-                char cmdArgs[32] = {0};
-                snprintf(cmdArgs, sizeof(cmdArgs)-1, "%u", m_setEQLParams.centerFreq);
-                fferr = avfilter_graph_send_command(m_filterGraph, "equalizer", "centerFreq", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
-                if (fferr >= 0)
-                {
-                    m_currEQLParams.centerFreq = m_setEQLParams.centerFreq;
-                    m_logger->Log(DEBUG) << "Succeeded." << endl;
-                }
-                else
-                {
-                    m_logger->Log(DEBUG) << "FAILED!" << endl;
-                    ostringstream oss;
-                    oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "equalizer" << "', cmd='" << "centerFreq"
-                        << "', arg='" << cmdArgs << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
-                    m_errMsg = oss.str();
-                    m_logger->Log(WARN) << m_errMsg << endl;
-                }
-            }
-            if (m_setEQLParams.bandWidth != m_currEQLParams.bandWidth)
-            {
-                m_logger->Log(DEBUG) << "Change EqualizerParams::bandWidth: " << m_currEQLParams.bandWidth << " -> " << m_setEQLParams.bandWidth << " ... ";
-                char cmdArgs[32] = {0};
-                snprintf(cmdArgs, sizeof(cmdArgs)-1, "%u", m_setEQLParams.bandWidth);
-                fferr = avfilter_graph_send_command(m_filterGraph, "equalizer", "bandWidth", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
-                if (fferr >= 0)
-                {
-                    m_currEQLParams.bandWidth = m_setEQLParams.bandWidth;
-                    m_logger->Log(DEBUG) << "Succeeded." << endl;
-                }
-                else
-                {
-                    m_logger->Log(DEBUG) << "FAILED!" << endl;
-                    ostringstream oss;
-                    oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "equalizer" << "', cmd='" << "bandWidth"
-                        << "', arg='" << cmdArgs << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
-                    m_errMsg = oss.str();
-                    m_logger->Log(WARN) << m_errMsg << endl;
-                }
-            }
+        for (int i=0; i < GetEqualizerParamsListLength(); i++) {
+            auto &m_currEQLParams = m_currMultiEqualizerParamsList[i];
+            auto &m_setEQLParams = m_setMultiEqualizerParamsList[i];
             if (m_setEQLParams.gain != m_currEQLParams.gain)
             {
-                m_logger->Log(DEBUG) << "Change EqualizerParams::gain: " << m_currEQLParams.gain << " -> " << m_setEQLParams.gain << " ... ";
+                m_logger->Log(DEBUG) << "Change CenterFreq: ^" << DF_CENTER_FREQS[i] << "^ EqualizerParams::gain: " << m_currEQLParams.gain << " -> " << m_setEQLParams.gain << " ... ";
+                char targetFilter[32] = {0};
+                snprintf(targetFilter, sizeof(targetFilter)-1, "equalizer@%d", i);
                 char cmdArgs[32] = {0};
                 snprintf(cmdArgs, sizeof(cmdArgs)-1, "%d", m_setEQLParams.gain);
-                fferr = avfilter_graph_send_command(m_filterGraph, "equalizer", "gain", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
+                fferr = avfilter_graph_send_command(m_filterGraph, targetFilter, "gain", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
                 if (fferr >= 0)
                 {
                     m_currEQLParams.gain = m_setEQLParams.gain;
@@ -908,7 +878,7 @@ private:
                 {
                     m_logger->Log(DEBUG) << "FAILED!" << endl;
                     ostringstream oss;
-                    oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "equalizer" << "', cmd='" << "gain"
+                    oss << "FAILED to invoke 'avfilter_graph_send_command()' with arguments: target='" << "equalizer@" << i << "', cmd='" << "gain"
                         << "', arg='" << cmdArgs << "'. Returned fferr=" << fferr << ", res='" << cmdRes << "'.";
                     m_errMsg = oss.str();
                     m_logger->Log(WARN) << m_errMsg << endl;
@@ -1164,36 +1134,33 @@ private:
     AVFilterContext* m_panBufsrcCtx{nullptr};
     AVFilterContext* m_panBufsinkCtx{nullptr};
 
+    static const std::vector<uint32_t> DF_CENTER_FREQS;
+    static const std::vector<uint32_t> DF_BAND_WTHS;
+
     VolumeParams m_setVolumeParams, m_currVolumeParams;
     PanParams m_setPanParams, m_currPanParams;
     LimiterParams m_setLimiterParams, m_currLimiterParams;
     GateParams m_setGateParams, m_currGateParams;
     CompressorParams m_setCompressorParams, m_currCompressorParams;
-    EqualizerParams m_setMultiEqualizerParams[10] = {
-            { 32,       32,         0 },        { 64,       64,         0 },
-            { 125,      125,        0 },        { 250,      250,        0 },
-            { 500,      500,        0 },        { 1000,     1000,       0 },
-            { 2000,     2000,       0 },        { 4000,     4000,       0 },
-            { 8000,     8000,       0 },        { 16000,    16000,      0 },
-    };
-    EqualizerParams m_currMultiEqualizerParams[10] = {
-            { 32,       32,         0 },        { 64,       64,         0 },
-            { 125,      125,        0 },        { 250,      250,        0 },
-            { 500,      500,        0 },        { 1000,     1000,       0 },
-            { 2000,     2000,       0 },        { 4000,     4000,       0 },
-            { 8000,     8000,       0 },        { 16000,    16000,      0 },
-    };
+    std::vector<EqualizerParams> m_setMultiEqualizerParamsList, m_currMultiEqualizerParamsList;
 
     AudioImMatAVFrameConverter m_matCvter;
     string m_errMsg;
 };
 
+const std::vector<uint32_t> AudioEffectFilter_FFImpl::DF_CENTER_FREQS = {
+    32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000
+};
+const std::vector<uint32_t> AudioEffectFilter_FFImpl::DF_BAND_WTHS = {
+    32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000
+};
+
 const uint32_t AudioEffectFilter::VOLUME        = 0x1;
 const uint32_t AudioEffectFilter::PAN           = 0x2;
-const uint32_t AudioEffectFilter::GATE          = 0x3;
 const uint32_t AudioEffectFilter::LIMITER       = 0x4;
-const uint32_t AudioEffectFilter::EQUALIZER     = 0x5;
-const uint32_t AudioEffectFilter::COMPRESSOR    = 0x6;
+const uint32_t AudioEffectFilter::GATE          = 0x8;
+const uint32_t AudioEffectFilter::EQUALIZER     = 0x10;
+const uint32_t AudioEffectFilter::COMPRESSOR    = 0x20;
 
 AudioEffectFilterHolder CreateAudioEffectFilter(const string& loggerName)
 {
