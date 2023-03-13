@@ -694,7 +694,7 @@ private:
 
             int64_t mixingPos = m_samplePos*1000/m_outSampleRate;
             m_eof = m_readForward ? mixingPos >= Duration() : mixingPos <= 0;
-            if (m_outputMats.size() < m_outputMatsMaxCount && !m_eof)
+            if (m_outputMats.size() < m_outputMatsMaxCount)
             {
                 if (!m_tracks.empty())
                 {
@@ -777,7 +777,7 @@ private:
 #endif
                     amat.create((int)m_outSamplesPerFrame, 1, outChannels, (size_t)4);
                     memset(amat.data, 0, amat.total()*amat.elemsize);
-                    amat.time_stamp = (double)m_samplePos/m_outSampleRate;
+                    amat.time_stamp = ConvertPtsToTs(m_samplePos);
                     amat.flags = IM_MAT_FLAGS_AUDIO_FRAME;
                     amat.rate = { (int)m_outSampleRate, 1 };
                     amat.elempack = outChannels;

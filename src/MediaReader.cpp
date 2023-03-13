@@ -3027,7 +3027,7 @@ private:
             if (c == 1 || c%100 == 0)
             {
                 ostringstream oss;
-                oss << "[" << m_failedToFindNextReadTaskCounter << "]CAN NOT find next AUDIO read task! "
+                oss << "[" << c << "]CAN NOT find next AUDIO read task! "
                     << "m_audReadNextTaskSeekPts0=";
                 if (m_audReadNextTaskSeekPts0 == INT64_MIN)
                     oss << "INT64_MIN";
@@ -3044,7 +3044,8 @@ private:
                 else
                     oss << "EMPTY";
                 oss << ".";
-                m_logger->Log(WARN) << oss.str() << endl;
+                auto logLevel = c > 1 ? WARN : DEBUG;
+                m_logger->Log(logLevel) << oss.str() << endl;
             }
         }
         else
