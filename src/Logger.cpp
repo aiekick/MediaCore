@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <functional>
 #include <mutex>
+#include <thread>
 #include "Logger.h"
 
 using namespace std;
@@ -216,6 +217,11 @@ namespace Logger
     class LogStream : public ostream
     {
     public:
+        LogStream()
+            : m_logBuffer(nullptr, nullptr, SINGLE_LOG_MAXSIZE)
+            , ostream(&m_logBuffer)
+        {}
+
         LogStream(BaseLogger* logger, ostream* os, size_t size)
             : m_logBuffer(logger, os, size)
             , ostream(&m_logBuffer)
@@ -237,15 +243,25 @@ namespace Logger
         LogBuffer m_logBuffer;
     };
 
-    thread_local unique_ptr<LogStream> THL_LOG_STREAM;
+    static unordered_map<thread::id, unique_ptr<LogStream>> _THREAD_LOGSTREAM_TABLE;
+    static mutex _THREAD_LOGSTREAM_TABLE_LOCK;
 
     LogStream& GetThreadLocalLogStream(BaseLogger* logger, ostream* os = nullptr)
     {
-        if (!THL_LOG_STREAM)
-            THL_LOG_STREAM = unique_ptr<LogStream>(new LogStream(logger, os, SINGLE_LOG_MAXSIZE));
+        LogStream* pLogStream;
+        auto thid = this_thread::get_id();
+        auto iter = _THREAD_LOGSTREAM_TABLE.find(thid);
+        if (iter == _THREAD_LOGSTREAM_TABLE.end())
+        {
+            lock_guard<mutex> lk(_THREAD_LOGSTREAM_TABLE_LOCK);
+            pLogStream = new LogStream(logger, os, SINGLE_LOG_MAXSIZE);
+            _THREAD_LOGSTREAM_TABLE[thid] = unique_ptr<LogStream>(pLogStream);
+        }
         else
-            THL_LOG_STREAM->SetLogger(logger)->SetOStream(os);
-        return *THL_LOG_STREAM;
+        {
+            pLogStream = iter->second.get();
+        }
+        return *pLogStream;
     }
 
     class StdoutLogger final : public BaseLogger
@@ -288,7 +304,7 @@ namespace Logger
     unique_ptr<BaseLogger> DEFAULT_LOGGER;
     mutex DEFAULT_LOGGER_LOCK;
 
-    ALogger* GetDefaultLogger()
+    static BaseLogger* GetDefaultBaseLogger()
     {
         lock_guard<mutex> lk(DEFAULT_LOGGER_LOCK);
         if (!DEFAULT_LOGGER)
@@ -296,17 +312,14 @@ namespace Logger
         return DEFAULT_LOGGER.get();
     }
 
-    static BaseLogger* GetDefaultBaseLoger()
+    ALogger* GetDefaultLogger()
     {
-        lock_guard<mutex> lk(DEFAULT_LOGGER_LOCK);
-        if (!DEFAULT_LOGGER)
-            DEFAULT_LOGGER = unique_ptr<BaseLogger>(DEFAULT_LOGGER_CREATOR(DEFAULT_LOGGER_NAME));
-        return DEFAULT_LOGGER.get();
+        return GetDefaultBaseLogger();
     }
 
     void Log(Level l, const string fmt, ...)
     {
-        BaseLogger* logger = GetDefaultBaseLoger();
+        BaseLogger* logger = GetDefaultBaseLogger();
         if (!logger->CheckShow(l))
             return;
         va_list ap;
@@ -317,26 +330,26 @@ namespace Logger
 
     ostream& Log(Level l)
     {
-        BaseLogger* logger = GetDefaultBaseLoger();
+        BaseLogger* logger = GetDefaultBaseLogger();
         return logger->Log(l);
     }
 
-    unordered_map<string, LoggerHolder> NAMED_LOGGERS;
-    mutex NAMED_LOGGERS_LOCK;
+    static unordered_map<string, LoggerHolder> _NAMED_LOGGERS;
+    static mutex _NAMED_LOGGERS_LOCK;
 
     ALogger* GetLogger(const string& name)
     {
         ALogger* logger;
-        auto iter = NAMED_LOGGERS.find(name);
-        if (iter == NAMED_LOGGERS.end())
+        auto iter = _NAMED_LOGGERS.find(name);
+        if (iter == _NAMED_LOGGERS.end())
         {
-            lock_guard<mutex> lk(NAMED_LOGGERS_LOCK);
-            iter = NAMED_LOGGERS.find(name);
-            if (iter == NAMED_LOGGERS.end())
+            lock_guard<mutex> lk(_NAMED_LOGGERS_LOCK);
+            iter = _NAMED_LOGGERS.find(name);
+            if (iter == _NAMED_LOGGERS.end())
             {
                 LoggerHolder hLogger = LoggerHolder(new StdoutLogger(name));
                 hLogger->SetShowLoggerName(true);
-                NAMED_LOGGERS[name] = hLogger;
+                _NAMED_LOGGERS[name] = hLogger;
                 logger = hLogger.get();
             }
             else
