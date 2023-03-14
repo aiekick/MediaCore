@@ -75,8 +75,8 @@ namespace MediaCore
         virtual SubtitleTrackHolder Clone(uint32_t frmW, uint32_t frmH) = 0;
         virtual std::string GetError() const = 0;
 
-        static SubtitleTrackHolder BuildFromFile(int64_t id, const std::string& url);
-        static SubtitleTrackHolder NewEmptyTrack(int64_t id);
+        MEDIACORE_API static SubtitleTrackHolder BuildFromFile(int64_t id, const std::string& url);
+        MEDIACORE_API static SubtitleTrackHolder NewEmptyTrack(int64_t id);
     };
 
     MEDIACORE_API bool InitializeSubtitleLibrary();
