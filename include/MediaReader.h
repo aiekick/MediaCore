@@ -1,5 +1,6 @@
 #pragma once
 #include "immat.h"
+#include "MediaCore.h"
 #include "MediaParser.h"
 #include "Logger.h"
 
@@ -53,7 +54,7 @@ struct MediaReader
     virtual std::string GetError() const = 0;
 };
 
-MediaReader* CreateMediaReader(const std::string& loggerName = "");
-void ReleaseMediaReader(MediaReader** mreader);
+MEDIACORE_API MediaReader* CreateMediaReader(const std::string& loggerName = "");
+MEDIACORE_API void ReleaseMediaReader(MediaReader** mreader);
 
-Logger::ALogger* GetMediaReaderLogger();
+MEDIACORE_API Logger::ALogger* GetMediaReaderLogger();
