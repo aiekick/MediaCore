@@ -317,6 +317,8 @@ namespace Logger
         else
         {
             pLogStream = iter->second.get();
+            pLogStream->SetLogger(logger);
+            pLogStream->SetOStream(os);
         }
         return *pLogStream;
     }
