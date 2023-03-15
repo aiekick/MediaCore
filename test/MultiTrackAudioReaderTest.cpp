@@ -186,293 +186,170 @@ static bool isOpenMasterWindow = false;
 static bool isOpenTrackWindow = false;
 static int64_t currTrackId = 0;
 
-void CreateMasterWindowContent(AudioEffectFilterHolder& aeFilter)
+void DrawAudioEffectSettingsWindow(AudioEffectFilterHolder aeFilter)
 {
     ostringstream labeloss;
     string label;
     float value, valMin, valMax;
 
-    ImGui::Spacing();
-    ImGui::BeginGroup();
-    // Master volume
-    aeFilter = g_mtAudReader->GetAudioEffectFilter();
-    AudioEffectFilter::VolumeParams volParams = aeFilter->GetVolumeParams();
-    labeloss << "VolM";
-    label = labeloss.str();
-    value = volParams.volume;
-    valMin = 0; valMax = 1.5;
-    if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+    // Volume
+    if (aeFilter->HasFilter(AudioEffectFilter::VOLUME))
     {
-        volParams.volume = value;
-        aeFilter->SetVolumeParams(&volParams);
-    }
-    ImGui::EndGroup();
-
-    ImGui::Spacing();
-    ImGui::BeginGroup();
-    // Master equalizer
-    aeFilter = g_mtAudReader->GetAudioEffectFilter();
-    valMin = -12; valMax = 12;
-    for (int i=0; i < aeFilter->GetEqualizerParamsListLength(); i++) {
-        ImGui::SameLine();
-        labeloss.str(""); labeloss << "EQL.g" << i+1 << ".M";
+        ImGui::Spacing();
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted("Volume settings");
+        valMin = 0; valMax = 1.5;
+        labeloss.str(""); labeloss << "Vol";
         label = labeloss.str();
-        AudioEffectFilter::EqualizerParams equalizerParams = aeFilter->GetEqualizerParamsByIndex(i);
-        value = equalizerParams.gain;
+        AudioEffectFilter::VolumeParams volParams = aeFilter->GetVolumeParams();
+        value = volParams.volume;
         if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
         {
-            equalizerParams.gain = value;
-            aeFilter->SetEqualizerParamsByIndex(&equalizerParams, i);
+            volParams.volume = value;
+            aeFilter->SetVolumeParams(&volParams);
         }
+        ImGui::EndGroup();
     }
-    ImGui::EndGroup();
 
-    ImGui::Spacing();
-    ImGui::BeginGroup();
-    // Master compressor
-    aeFilter = g_mtAudReader->GetAudioEffectFilter();
-    AudioEffectFilter::CompressorParams compressorParams = aeFilter->GetCompressorParams();
-    ImGui::SameLine();
-    labeloss.str(""); labeloss << "CPR.Th.M";
-    label = labeloss.str();
-    valMin = 0.00097563; valMax = 1;
-    value = compressorParams.threshold;
-    if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+    // Equalizer
+    if (aeFilter->HasFilter(AudioEffectFilter::EQUALIZER))
     {
-        compressorParams.threshold = value;
-        aeFilter->SetCompressorParams(&compressorParams);
+        ImGui::Spacing();
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted("Equalizer settings");
+        AudioEffectFilter::EqualizerBandInfo bandInfo = aeFilter->GetEqualizerBandInfo();
+        valMin = -12; valMax = 12;
+        for (int i = 0; i < bandInfo.bandCount; i++)
+        {
+            if (i > 0)
+                ImGui::SameLine();
+            labeloss.str(""); labeloss << bandInfo.centerFreqList[i];
+            label = labeloss.str();
+            AudioEffectFilter::EqualizerParams equalizerParams = aeFilter->GetEqualizerParamsByIndex(i);
+            value = equalizerParams.gain;
+            if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+            {
+                equalizerParams.gain = value;
+                aeFilter->SetEqualizerParamsByIndex(&equalizerParams, i);
+            }
+        }
+        ImGui::EndGroup();
     }
-    ImGui::SameLine();
-    labeloss.str(""); labeloss << "CPR.Ra.M";
-    label = labeloss.str();
-    valMin = 1; valMax = 20;
-    value = compressorParams.ratio;
-    if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
-    {
-        compressorParams.ratio = value;
-        aeFilter->SetCompressorParams(&compressorParams);
-    }
-    ImGui::SameLine();
-    labeloss.str(""); labeloss << "CPR.lv_in.M";
-    label = labeloss.str();
-    valMin = 0.015625; valMax = 64;
-    value = compressorParams.level_sc;
-    if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
-    {
-        compressorParams.level_sc = value;
-        aeFilter->SetCompressorParams(&compressorParams);
-    }
-    ImGui::EndGroup();
 
-    ImGui::Spacing();
-    ImGui::BeginGroup();
-    // Master agate
-    aeFilter = g_mtAudReader->GetAudioEffectFilter();
-    AudioEffectFilter::GateParams gateParams = aeFilter->GetGateParams();
-    ImGui::SameLine();
-    labeloss.str(""); labeloss << "Gate.Th.M";
-    label = labeloss.str();
-    valMin = 0; valMax = 1;
-    value = gateParams.threshold;
-    if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+    // Compressor
+    if (aeFilter->HasFilter(AudioEffectFilter::COMPRESSOR))
     {
-        gateParams.threshold = value;
-        aeFilter->SetGateParams(&gateParams);
-    }
-    ImGui::SameLine();
-    labeloss.str(""); labeloss << "Gate.Ra.M";
-    label = labeloss.str();
-    valMin = 1; valMax = 9000;
-    value = gateParams.ratio;
-    if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
-    {
-        gateParams.ratio = value;
-        aeFilter->SetGateParams(&gateParams);
-    }
-    ImGui::EndGroup();
-
-    ImGui::Spacing();
-    ImGui::BeginGroup();
-    // Master limiter
-    aeFilter = g_mtAudReader->GetAudioEffectFilter();
-    AudioEffectFilter::LimiterParams limiterParams = aeFilter->GetLimiterParams();
-    labeloss.str(""); labeloss << "LimM";
-    label = labeloss.str();
-    value = limiterParams.limit;
-    valMin = 0.0625; valMax = 1;
-    if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
-    {
-        limiterParams.limit = value;
-        aeFilter->SetLimiterParams(&limiterParams);
-    }
-    ImGui::EndGroup();
-
-    ImGui::Spacing();
-    ImGui::BeginGroup();
-    // Master pan
-    aeFilter = g_mtAudReader->GetAudioEffectFilter();
-    AudioEffectFilter::PanParams panParams = aeFilter->GetPanParams();
-    valMin = 0; valMax = 1;
-    labeloss.str(""); labeloss << "PanM.X";
-    label = labeloss.str();
-    value = panParams.x;
-    if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
-    {
-        panParams.x = value;
-        aeFilter->SetPanParams(&panParams);
-    }
-    ImGui::SameLine();
-    labeloss.str(""); labeloss << "PanM.Y";
-    label = labeloss.str();
-    value = panParams.y;
-    if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
-    {
-        panParams.y = value;
-        aeFilter->SetPanParams(&panParams);
-    }
-    ImGui::EndGroup();
-}
-
-void CreateTrackWindowContent(std::list<AudioTrackHolder>::iterator& trackIter)
-{
-    ostringstream labeloss;
-    string label;
-    float value, valMin, valMax;
-    AudioEffectFilterHolder aeFilter = (*trackIter)->GetAudioEffectFilter();
-
-    ImGui::Spacing();
-    ImGui::BeginGroup();
-    // Track vol
-    valMin = 0; valMax = 1.5;
-    labeloss.str(""); labeloss << "Vol";
-    label = labeloss.str();
-    AudioEffectFilter::VolumeParams volParams = aeFilter->GetVolumeParams();
-    value = volParams.volume;
-    if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
-    {
-        volParams.volume = value;
-        aeFilter->SetVolumeParams(&volParams);
-    }
-    ImGui::EndGroup();
-
-    ImGui::Spacing();
-    ImGui::BeginGroup();
-    // Track equalizer
-    valMin = -12; valMax = 12;
-    for (int i=0; i < aeFilter->GetEqualizerParamsListLength(); i++) {
-        ImGui::SameLine();
-        labeloss.str(""); labeloss << "EQL.g" << i+1;
+        ImGui::Spacing();
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted("Compressor settings");
+        AudioEffectFilter::CompressorParams compressorParams = aeFilter->GetCompressorParams();
+        labeloss.str(""); labeloss << "Thresh";
         label = labeloss.str();
-        AudioEffectFilter::EqualizerParams equalizerParams = aeFilter->GetEqualizerParamsByIndex(i);
-        value = equalizerParams.gain;
+        valMin = 0.00097563; valMax = 1;
+        value = compressorParams.threshold;
         if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
         {
-            equalizerParams.gain = value;
-            aeFilter->SetEqualizerParamsByIndex(&equalizerParams, i);
+            compressorParams.threshold = value;
+            aeFilter->SetCompressorParams(&compressorParams);
         }
+        ImGui::SameLine();
+        labeloss.str(""); labeloss << "Ratio";
+        label = labeloss.str();
+        valMin = 1; valMax = 20;
+        value = compressorParams.ratio;
+        if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+        {
+            compressorParams.ratio = value;
+            aeFilter->SetCompressorParams(&compressorParams);
+        }
+        ImGui::SameLine();
+        labeloss.str(""); labeloss << "LvlIn";
+        label = labeloss.str();
+        valMin = 0.015625; valMax = 64;
+        value = compressorParams.levelIn;
+        if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+        {
+            compressorParams.levelIn = value;
+            aeFilter->SetCompressorParams(&compressorParams);
+        }
+        ImGui::EndGroup();
     }
-    ImGui::EndGroup();
 
-    ImGui::Spacing();
-    ImGui::BeginGroup();
-    // Track compressor
-    AudioEffectFilter::CompressorParams compressorParams = aeFilter->GetCompressorParams();
-    ImGui::SameLine();
-    labeloss.str(""); labeloss << "CPR.Th";
-    label = labeloss.str();
-    valMin = 0.00097563; valMax = 1;
-    value = compressorParams.threshold;
-    if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+    // Gate
+    if (aeFilter->HasFilter(AudioEffectFilter::GATE))
     {
-        compressorParams.threshold = value;
-        aeFilter->SetCompressorParams(&compressorParams);
+        ImGui::Spacing();
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted("Gate settings");
+        AudioEffectFilter::GateParams gateParams = aeFilter->GetGateParams();
+        labeloss.str(""); labeloss << "Thresh";
+        label = labeloss.str();
+        valMin = 0; valMax = 1;
+        value = gateParams.threshold;
+        if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+        {
+            gateParams.threshold = value;
+            aeFilter->SetGateParams(&gateParams);
+        }
+        ImGui::SameLine();
+        labeloss.str(""); labeloss << "Ratio";
+        label = labeloss.str();
+        valMin = 1; valMax = 9000;
+        value = gateParams.ratio;
+        if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+        {
+            gateParams.ratio = value;
+            aeFilter->SetGateParams(&gateParams);
+        }
+        ImGui::EndGroup();
     }
-    ImGui::SameLine();
-    labeloss.str(""); labeloss << "CPR.Ra";
-    label = labeloss.str();
-    valMin = 1; valMax = 20;
-    value = compressorParams.ratio;
-    if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
-    {
-        compressorParams.ratio = value;
-        aeFilter->SetCompressorParams(&compressorParams);
-    }
-    ImGui::SameLine();
-    labeloss.str(""); labeloss << "CPR.lv_in";
-    label = labeloss.str();
-    valMin = 0.015625; valMax = 64;
-    value = compressorParams.level_sc;
-    if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
-    {
-        compressorParams.level_sc = value;
-        aeFilter->SetCompressorParams(&compressorParams);
-    }
-    ImGui::EndGroup();
 
-    ImGui::Spacing();
-    ImGui::BeginGroup();
-    // Track agate
-    AudioEffectFilter::GateParams gateParams = aeFilter->GetGateParams();
-    ImGui::SameLine();
-    labeloss.str(""); labeloss << "Gate.Th";
-    label = labeloss.str();
-    valMin = 0; valMax = 1;
-    value = gateParams.threshold;
-    if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+    // Limiter
+    if (aeFilter->HasFilter(AudioEffectFilter::LIMITER))
     {
-        gateParams.threshold = value;
-        aeFilter->SetGateParams(&gateParams);
+        ImGui::Spacing();
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted("Limiter settings");
+        AudioEffectFilter::LimiterParams limiterParams = aeFilter->GetLimiterParams();
+        labeloss.str(""); labeloss << "limit";
+        label = labeloss.str();
+        value = limiterParams.limit;
+        valMin = 0.0625; valMax = 1;
+        if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+        {
+            limiterParams.limit = value;
+            aeFilter->SetLimiterParams(&limiterParams);
+        }
+        ImGui::EndGroup();
     }
-    ImGui::SameLine();
-    labeloss.str(""); labeloss << "Gate.Ra";
-    label = labeloss.str();
-    valMin = 1; valMax = 9000;
-    value = gateParams.ratio;
-    if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
-    {
-        gateParams.ratio = value;
-        aeFilter->SetGateParams(&gateParams);
-    }
-    ImGui::EndGroup();
 
-    ImGui::Spacing();
-    ImGui::BeginGroup();
-    // Track limiter
-    AudioEffectFilter::LimiterParams limiterParams = aeFilter->GetLimiterParams();
-    labeloss.str(""); labeloss << "Lim";
-    label = labeloss.str();
-    value = limiterParams.limit;
-    valMin = 0.0625; valMax = 1;
-    if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+    // Pan
+    if (aeFilter->HasFilter(AudioEffectFilter::PAN))
     {
-        limiterParams.limit = value;
-        aeFilter->SetLimiterParams(&limiterParams);
+        ImGui::Spacing();
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted("Pan settings");
+        AudioEffectFilter::PanParams panParams = aeFilter->GetPanParams();
+        valMin = 0; valMax = 1;
+        labeloss.str(""); labeloss << "X";
+        label = labeloss.str();
+        value = panParams.x;
+        if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+        {
+            panParams.x = value;
+            aeFilter->SetPanParams(&panParams);
+        }
+        ImGui::SameLine();
+        labeloss.str(""); labeloss << "Y";
+        label = labeloss.str();
+        value = panParams.y;
+        if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
+        {
+            panParams.y = value;
+            aeFilter->SetPanParams(&panParams);
+        }
+        ImGui::EndGroup();
     }
-    ImGui::EndGroup();
-
-    ImGui::Spacing();
-    ImGui::BeginGroup();
-    // Track pan
-    AudioEffectFilter::PanParams panParams = aeFilter->GetPanParams();
-    valMin = 0; valMax = 1;
-    labeloss.str(""); labeloss << "Pan.X";
-    label = labeloss.str();
-    value = panParams.x;
-    if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
-    {
-        panParams.x = value;
-        aeFilter->SetPanParams(&panParams);
-    }
-    ImGui::SameLine();
-    labeloss.str(""); labeloss << "Pan.Y";
-    label = labeloss.str();
-    value = panParams.y;
-    if (ImGui::VSliderFloat(label.c_str(), ImVec2(24, 96), &value, valMin, valMax, "%.1f"))
-    {
-        panParams.y = value;
-        aeFilter->SetPanParams(&panParams);
-    }
-    ImGui::EndGroup();
 }
 
 bool Application_Frame(void * handle, bool app_will_quit)
@@ -750,37 +627,39 @@ bool Application_Frame(void * handle, bool app_will_quit)
         string audTag = oss.str();
         ImGui::TextUnformatted(audTag.c_str());
 
+        // Audio effect setting window open buttons
         ImGui::Spacing();
         ImGui::BeginGroup();
         if (ImGui::Button("Master")) isOpenMasterWindow = true;
-        AudioEffectFilterHolder aeFilter;
         if (isOpenMasterWindow)
         {
             ImGui::SetNextWindowPos({0, 0});
             ImGui::SetNextWindowSize(io.DisplaySize);
-            ImGui::Begin("MasterWindow", &isOpenMasterWindow);
-            CreateMasterWindowContent(aeFilter);
+            ImGui::Begin("Master audio effect settings", &isOpenMasterWindow);
+            DrawAudioEffectSettingsWindow(g_mtAudReader->GetAudioEffectFilter());
             ImGui::End();
         }
-
+        audTrackIdx = 1;
         for (auto track = g_mtAudReader->TrackListBegin(); track != g_mtAudReader->TrackListEnd(); track++)
         {
             ImGui::SameLine();
-            oss.str(""); oss << "Track#" << (*track)->Id();
+            oss.str(""); oss << "Track#" << audTrackIdx;
             if (ImGui::Button(oss.str().c_str()))
             {
                 isOpenTrackWindow = true;
-                currTrackId = (*track)->Id();
+                currTrackId = audTrackIdx;
             }
-            if (isOpenTrackWindow && ((*track)->Id() == currTrackId))
+            if (isOpenTrackWindow && audTrackIdx == currTrackId)
             {
-                oss.str(""); oss << "TrackWindow#Track#" << (*track)->Id();
+                oss.str(""); oss << "Track#" << audTrackIdx << " audio effect settings";
                 ImGui::SetNextWindowPos({0, 0});
                 ImGui::SetNextWindowSize(io.DisplaySize);
-                ImGui::Begin(oss.str().c_str(), &isOpenTrackWindow);
-                CreateTrackWindowContent(track);
+                string wintitle = oss.str();
+                ImGui::Begin(wintitle.c_str(), &isOpenTrackWindow);
+                DrawAudioEffectSettingsWindow((*track)->GetAudioEffectFilter());
                 ImGui::End();
             }
+            audTrackIdx++;
         }
         ImGui::EndGroup();
         ImGui::End();

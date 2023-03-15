@@ -303,18 +303,13 @@ public:
             m_errMsg = "CANNOT set 'EqualizerParams' because this instance is NOT initialized with 'AudioEffectFilter::EQUALIZER' compose-flag!";
             return false;
         }
-        m_setMultiEqualizerParamsList.at(index) = *params;
+        m_setEqualizerParamsList.at(index) = *params;
         return true;
     }
 
     EqualizerParams GetEqualizerParamsByIndex(uint32_t index) const override
     {
-        return m_setMultiEqualizerParamsList.at(index);
-    }
-
-    int GetEqualizerParamsListLength() const override
-    {
-        return m_setMultiEqualizerParamsList.size();
+        return m_setEqualizerParamsList.at(index);
     }
 
     EqualizerBandInfo GetEqualizerBandInfo() const override
@@ -422,10 +417,12 @@ private:
             fgArgsOss << "agate=threshold=" << m_currGateParams.threshold << ":range=" << m_currGateParams.range << ":ratio=" << m_currGateParams.ratio << ":attack="
                 << m_currGateParams.attack << ":release=" << m_currGateParams.release << ":makeup=" << m_currGateParams.makeup << ":knee=" << m_currGateParams.knee;
         }
-        if (CheckFilters(composeFlags, EQUALIZER)) {
-            for (int i=0; i < DF_CENTER_FREQS.size(); i++) {
-                m_currMultiEqualizerParamsList.push_back({0});
-                m_setMultiEqualizerParamsList.push_back({0});
+        if (CheckFilters(composeFlags, EQUALIZER))
+        {
+            for (int i=0; i < DF_CENTER_FREQS.size(); i++)
+            {
+                m_currEqualizerParamsList.push_back({0});
+                m_setEqualizerParamsList.push_back({0});
                 if (!isFirstFilter) fgArgsOss << ","; else isFirstFilter = false;
                 fgArgsOss << "equalizer@" << i << "=f=" << DF_CENTER_FREQS[i] << ":t=h:w=" << DF_BAND_WTHS[i] << ":g=0";
             }
@@ -435,11 +432,7 @@ private:
             if (!isFirstFilter) fgArgsOss << ","; else isFirstFilter = false;
             fgArgsOss << "acompressor=threshold=" << m_currCompressorParams.threshold << ":ratio=" << m_currCompressorParams.ratio << ":knee="
                 << m_currCompressorParams.knee << ":mix=" << m_currCompressorParams.mix << ":attack=" << m_currCompressorParams.attack << ":release="
-                << m_currCompressorParams.release << ":makeup=" << m_currCompressorParams.makeup << ":level_in=" << m_currCompressorParams.level_sc;
-        }
-        if (CheckFilters(composeFlags, PAN))
-        {
-            m_logger->Log(Error) << "Filter 'pan' is NOT SUPPORTED yet! Ignore this setting." << endl;
+                << m_currCompressorParams.release << ":makeup=" << m_currCompressorParams.makeup << ":level_in=" << m_currCompressorParams.levelIn;
         }
         if (CheckFilters(composeFlags, VOLUME))
         {
@@ -668,6 +661,7 @@ private:
     {
         int fferr;
         char cmdRes[256] = {0};
+        // Check VolumeParams
         if (m_setVolumeParams.volume != m_currVolumeParams.volume)
         {
             m_logger->Log(DEBUG) << "Change VolumeParams::volume: " << m_currVolumeParams.volume << " -> " << m_setVolumeParams.volume << " ... ";
@@ -689,6 +683,7 @@ private:
                 m_logger->Log(WARN) << m_errMsg << endl;
             }
         }
+        // Check CompressorParams
         if (m_setCompressorParams.threshold != m_currCompressorParams.threshold)
         {
             m_logger->Log(DEBUG) << "Change CompressorParams::threshold: " << m_currCompressorParams.threshold << " -> " << m_setCompressorParams.threshold << " ... ";
@@ -836,15 +831,15 @@ private:
                 m_logger->Log(WARN) << m_errMsg << endl;
             }
         }
-        if (m_setCompressorParams.level_sc != m_currCompressorParams.level_sc)
+        if (m_setCompressorParams.levelIn != m_currCompressorParams.levelIn)
         {
-            m_logger->Log(DEBUG) << "Change CompressorParams::level_sc: " << m_currCompressorParams.level_sc << " -> " << m_setCompressorParams.level_sc << " ... ";
+            m_logger->Log(DEBUG) << "Change CompressorParams::level_sc: " << m_currCompressorParams.levelIn << " -> " << m_setCompressorParams.levelIn << " ... ";
             char cmdArgs[32] = {0};
-            snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_setCompressorParams.level_sc);
+            snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_setCompressorParams.levelIn);
             fferr = avfilter_graph_send_command(m_filterGraph, "acompressor", "level_in", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
             if (fferr >= 0)
             {
-                m_currCompressorParams.level_sc = m_setCompressorParams.level_sc;
+                m_currCompressorParams.levelIn = m_setCompressorParams.levelIn;
                 m_logger->Log(DEBUG) << "Succeeded." << endl;
             }
             else
@@ -857,13 +852,14 @@ private:
                 m_logger->Log(WARN) << m_errMsg << endl;
             }
         }
-
-        for (int i=0; i < GetEqualizerParamsListLength(); i++) {
-            auto &m_currEQLParams = m_currMultiEqualizerParamsList[i];
-            auto &m_setEQLParams = m_setMultiEqualizerParamsList[i];
+        // Check EqualizerParams
+        for (int i=0; i < m_currEqualizerParamsList.size(); i++)
+        {
+            auto &m_currEQLParams = m_currEqualizerParamsList[i];
+            auto &m_setEQLParams = m_setEqualizerParamsList[i];
             if (m_setEQLParams.gain != m_currEQLParams.gain)
             {
-                m_logger->Log(DEBUG) << "Change CenterFreq: ^" << DF_CENTER_FREQS[i] << "^ EqualizerParams::gain: " << m_currEQLParams.gain << " -> " << m_setEQLParams.gain << " ... ";
+                m_logger->Log(DEBUG) << "Change (CenterFreq@" << DF_CENTER_FREQS[i] << ") EqualizerParams::gain: " << m_currEQLParams.gain << " -> " << m_setEQLParams.gain << " ... ";
                 char targetFilter[32] = {0};
                 snprintf(targetFilter, sizeof(targetFilter)-1, "equalizer@%d", i);
                 char cmdArgs[32] = {0};
@@ -885,7 +881,7 @@ private:
                 }
             }
         }
-
+        // Check GateParams
         if (m_setGateParams.threshold != m_currGateParams.threshold)
         {
             m_logger->Log(DEBUG) << "Change GateParams::threshold: " << m_currGateParams.threshold << " -> " << m_setGateParams.threshold << " ... ";
@@ -1033,6 +1029,7 @@ private:
                 m_logger->Log(WARN) << m_errMsg << endl;
             }
         }
+        // Check LimiterParams
         if (m_setLimiterParams.limit != m_currLimiterParams.limit)
         {
             m_logger->Log(DEBUG) << "Change LimiterParams::limit: " << m_currLimiterParams.limit << " -> " << m_setLimiterParams.limit << " ... ";
@@ -1096,6 +1093,7 @@ private:
                 m_logger->Log(WARN) << m_errMsg << endl;
             }
         }
+        // Check PanParams
         if (m_setPanParams.x != m_currPanParams.x || m_setPanParams.y != m_currPanParams.y)
         {
             m_logger->Log(DEBUG) << "Change PanParams (" << m_currPanParams.x << ", " << m_currPanParams.y << ") -> (" << m_setPanParams.x << ", " << m_setPanParams.y << ")." << endl;
@@ -1142,7 +1140,7 @@ private:
     LimiterParams m_setLimiterParams, m_currLimiterParams;
     GateParams m_setGateParams, m_currGateParams;
     CompressorParams m_setCompressorParams, m_currCompressorParams;
-    std::vector<EqualizerParams> m_setMultiEqualizerParamsList, m_currMultiEqualizerParamsList;
+    std::vector<EqualizerParams> m_setEqualizerParamsList, m_currEqualizerParamsList;
 
     AudioImMatAVFrameConverter m_matCvter;
     string m_errMsg;

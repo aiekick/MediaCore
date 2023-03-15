@@ -47,8 +47,8 @@ namespace MediaCore
 
         struct GateParams
         {
-            float threshold{0.125f};
-            float range{0.06125f};
+            float threshold{0};
+            float range{0};
             float ratio{2};
             float attack{20};
             float release{250};
@@ -60,14 +60,14 @@ namespace MediaCore
 
         struct CompressorParams
         {
-            float threshold{0.125f};
+            float threshold{1};
             float ratio{2};
             float knee{2.82843f};
             float mix{1};
             float attack{20};
             float release{250};
             float makeup{1};
-            float level_sc{1};
+            float levelIn{1};
         };
         virtual bool SetCompressorParams(CompressorParams* params) = 0;
         virtual CompressorParams GetCompressorParams() const = 0;
@@ -86,7 +86,6 @@ namespace MediaCore
         };
         virtual bool SetEqualizerParamsByIndex(EqualizerParams* params, uint32_t index) = 0;
         virtual EqualizerParams GetEqualizerParamsByIndex(uint32_t index) const = 0;
-        virtual int GetEqualizerParamsListLength() const = 0;
 
         virtual std::string GetError() const = 0;
     };
