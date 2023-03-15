@@ -9,10 +9,29 @@
 #include <unordered_map>
 #include <functional>
 #include <mutex>
+#include <atomic>
 #include <thread>
+#ifdef _WIN32
+#include <Windows.h>
+#endif
 #include "Logger.h"
 
 using namespace std;
+
+#if defined(_WIN32) && !defined(NDEBUG)
+    static atomic_bool _WIN_CONSOLE_CREATED{false};
+    static atomic<HANDLE> _WIN_CONSOLE_OUTPUT_HANDLE(INVALID_HANDLE_VALUE);
+
+    static void _InitializeWindowsDebugConsole()
+    {
+        bool winConsoleCreated = _WIN_CONSOLE_CREATED.exchange(true);
+        if (!winConsoleCreated)
+        {
+            AllocConsole();
+            _WIN_CONSOLE_OUTPUT_HANDLE = GetStdHandle(STD_OUTPUT_HANDLE);
+        }
+    }
+#endif
 
 namespace Logger
 {
@@ -207,40 +226,73 @@ namespace Logger
             return 0;
         }
 
-    private:
+    protected:
         BaseLogger* m_logger{nullptr};
         ostream* m_os{nullptr};
         unique_ptr<stringbuf::char_type[]> m_buffer;
         uint32_t m_overflowChars{0};
     };
 
+#if defined(_WIN32) && !defined(NDEBUG)
+    class WinLogBuffer : public LogBuffer
+    {
+    public:
+        WinLogBuffer(BaseLogger* logger, ostream* os, size_t size)
+            : LogBuffer(logger, os, size)
+        {}
+
+    protected:
+        int sync() override
+        {
+            int n = stringbuf::sync();
+            char* curr = pptr();
+            char* begin = pbase();
+            if (curr > begin)
+            {
+                ostringstream oss;
+                if (m_logger)
+                    oss << m_logger->GetLogPrefix();
+                oss.write(begin, curr-begin);
+                if (m_overflowChars > 0)
+                    oss << " (" << m_overflowChars << " bytes overflowed)" << endl;
+                string logstr = oss.str();
+                const void* lpBuffer = logstr.c_str();
+                DWORD nNumberOfCharsToWrite, nNumberOfCharsWritten = 0;
+                nNumberOfCharsToWrite = logstr.size();
+                WriteConsoleA(_WIN_CONSOLE_OUTPUT_HANDLE, lpBuffer, nNumberOfCharsToWrite, &nNumberOfCharsWritten, NULL);
+                seekpos(0);
+                m_overflowChars = 0;
+            }
+            return n;
+        }
+    };
+#endif
+
     class LogStream : public ostream
     {
     public:
-        LogStream()
-            : m_logBuffer(nullptr, nullptr, SINGLE_LOG_MAXSIZE)
-            , ostream(&m_logBuffer)
+        LogStream(LogBuffer* pBuf) : ostream(pBuf), m_pBuf(pBuf)
         {}
 
-        LogStream(BaseLogger* logger, ostream* os, size_t size)
-            : m_logBuffer(logger, os, size)
-            , ostream(&m_logBuffer)
-        {}
+        ~LogStream()
+        {
+            delete m_pBuf;
+        }
 
         LogStream* SetLogger(BaseLogger* logger)
         {
-            m_logBuffer.SetLogger(logger);
+            m_pBuf->SetLogger(logger);
             return this;
         }
 
         LogStream* SetOStream(ostream* os)
         {
-            m_logBuffer.SetOStream(os);
+            m_pBuf->SetOStream(os);
             return this;
         }
 
     private:
-        LogBuffer m_logBuffer;
+        LogBuffer* m_pBuf;
     };
 
     static unordered_map<thread::id, unique_ptr<LogStream>> _THREAD_LOGSTREAM_TABLE;
@@ -254,7 +306,12 @@ namespace Logger
         if (iter == _THREAD_LOGSTREAM_TABLE.end())
         {
             lock_guard<mutex> lk(_THREAD_LOGSTREAM_TABLE_LOCK);
-            pLogStream = new LogStream(logger, os, SINGLE_LOG_MAXSIZE);
+#if defined(_WIN32) && !defined(NDEBUG)
+            LogBuffer* pBuf = new WinLogBuffer(logger, os, SINGLE_LOG_MAXSIZE);
+#else
+            LogBuffer* pBuf = new LogBuffer(logger, os, SINGLE_LOG_MAXSIZE);
+#endif
+            pLogStream = new LogStream(pBuf);
             _THREAD_LOGSTREAM_TABLE[thid] = unique_ptr<LogStream>(pLogStream);
         }
         else
@@ -282,30 +339,65 @@ namespace Logger
         }
     };
 
+#if defined(_WIN32) && !defined(NDEBUG)
+    class WinConsoleLogger final : public BaseLogger
+    {
+    public:
+        WinConsoleLogger(const string& name) : BaseLogger(name) {}
+
+    protected:
+        ostream& GetLogStream(Level l) override
+        {
+            if (CheckShow(l))
+            {
+                m_currLevel = l;
+                return GetThreadLocalLogStream(this);
+            }
+            else
+                return NULL_STREAM;
+        }
+    };
+#endif
+
     void SetSingleLogMaxSize(uint32_t size)
     {
         SINGLE_LOG_MAXSIZE = size;
     }
 
-    function<BaseLogger*(const string& name)> STDOUT_LOGGER_CREATOR = [](const string& name) { return new StdoutLogger(name); };
-
-    const string DEFAULT_LOGGER_NAME = "<Default>";
-    function<BaseLogger*(const string& name)> DEFAULT_LOGGER_CREATOR = STDOUT_LOGGER_CREATOR;
+    static function<BaseLogger*(const string& name)> STDOUT_LOGGER_CREATOR = [](const string& name) { return new StdoutLogger(name); };
+#if defined(_WIN32) && !defined(NDEBUG)
+    static function<BaseLogger*(const string& name)> WINCONSOLE_LOGGER_CREATOR = [](const string& name) { return new WinConsoleLogger(name); };
+#endif
+    static const string DEFAULT_LOGGER_NAME = "<Default>";
+    static function<BaseLogger*(const string& name)> DEFAULT_LOGGER_CREATOR =
+#if defined(_WIN32) && !defined(NDEBUG)
+        WINCONSOLE_LOGGER_CREATOR
+#else
+        STDOUT_LOGGER_CREATOR
+#endif
+    ;
 
     bool SetDefaultLoggerType(const string& loggerType)
     {
         if (loggerType == "StdoutLogger")
             DEFAULT_LOGGER_CREATOR = STDOUT_LOGGER_CREATOR;
+#if defined(_WIN32) && !defined(NDEBUG)
+        else if (loggerType == "WinConsoleLogger")
+            DEFAULT_LOGGER_CREATOR = WINCONSOLE_LOGGER_CREATOR;
+#endif
         else
             return false;
         return true;
     }
 
-    unique_ptr<BaseLogger> DEFAULT_LOGGER;
-    mutex DEFAULT_LOGGER_LOCK;
+    static unique_ptr<BaseLogger> DEFAULT_LOGGER;
+    static mutex DEFAULT_LOGGER_LOCK;
 
     static BaseLogger* GetDefaultBaseLogger()
     {
+#if defined(_WIN32) && !defined(NDEBUG)
+        _InitializeWindowsDebugConsole();
+#endif
         lock_guard<mutex> lk(DEFAULT_LOGGER_LOCK);
         if (!DEFAULT_LOGGER)
             DEFAULT_LOGGER = unique_ptr<BaseLogger>(DEFAULT_LOGGER_CREATOR(DEFAULT_LOGGER_NAME));
@@ -339,6 +431,9 @@ namespace Logger
 
     ALogger* GetLogger(const string& name)
     {
+#if defined(_WIN32) && !defined(NDEBUG)
+        _InitializeWindowsDebugConsole();
+#endif
         ALogger* logger;
         auto iter = _NAMED_LOGGERS.find(name);
         if (iter == _NAMED_LOGGERS.end())
@@ -347,7 +442,7 @@ namespace Logger
             iter = _NAMED_LOGGERS.find(name);
             if (iter == _NAMED_LOGGERS.end())
             {
-                LoggerHolder hLogger = LoggerHolder(new StdoutLogger(name));
+                LoggerHolder hLogger = LoggerHolder(DEFAULT_LOGGER_CREATOR(name));
                 hLogger->SetShowLoggerName(true);
                 _NAMED_LOGGERS[name] = hLogger;
                 logger = hLogger.get();
