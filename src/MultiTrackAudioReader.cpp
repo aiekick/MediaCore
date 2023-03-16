@@ -344,8 +344,9 @@ public:
         return true;
     }
 
-    bool ReadAudioSamples(ImGui::ImMat& amat, bool& eof) override
+    bool ReadAudioSamplesEx(vector<CorrelativeFrame>& amats, bool& eof) override
     {
+        amats.clear();
         eof = false;
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_started)
@@ -353,12 +354,9 @@ public:
             m_errMsg = "This MultiTrackAudioReader instance is NOT started yet!";
             return false;
         }
-        amat.release();
-        if (m_tracks.empty())
-            return false;
 
         m_outputMatsLock.lock();
-        while (m_outputMats.empty() && !m_eof && !m_quit)
+        while (m_outputMats.empty() && !m_quit)
         {
             m_outputMatsLock.unlock();
             this_thread::sleep_for(chrono::milliseconds(5));
@@ -370,16 +368,20 @@ public:
             m_errMsg = "This 'MultiTrackAudioReader' instance is quit.";
             return false;
         }
-        if (m_outputMats.empty() && m_eof)
-        {
-            eof = true;
-            return false;
-        }
 
-        amat = m_outputMats.front();
+        amats = m_outputMats.front();
         m_outputMats.pop_front();
-        m_readPos += (int64_t)amat.w*1000/m_outSampleRate;
+        m_readPos += (int64_t)amats[0].frame.w*1000/m_outSampleRate;
+        eof = m_eof;
         return true;
+    }
+
+    bool ReadAudioSamples(ImGui::ImMat& amat, bool& eof) override
+    {
+        vector<CorrelativeFrame> amats;
+        bool res = ReadAudioSamplesEx(amats, eof);
+        amat = amats[0].frame;
+        return res;
     }
 
     bool Refresh() override
@@ -696,6 +698,8 @@ private:
             m_eof = m_readForward ? mixingPos >= Duration() : mixingPos <= 0;
             if (m_outputMats.size() < m_outputMatsMaxCount)
             {
+                vector<CorrelativeFrame> corFrames;
+                corFrames.push_back({CorrelativeFrame::PHASE_AFTER_MIXING, 0, 0, ImGui::ImMat()});
                 if (!m_tracks.empty())
                 {
                     {
@@ -705,6 +709,7 @@ private:
                         {
                             auto& track = *iter;
                             ImGui::ImMat amat = track->ReadAudioSamples(m_outSamplesPerFrame);
+                            corFrames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSITION, 0, track->Id(), amat});
                             SelfFreeAVFramePtr audfrm = AllocSelfFreeAVFramePtr();
                             m_matAvfrmCvter->ConvertImMatToAVFrame(amat, audfrm.get(), m_samplePos);
                             fferr = av_buffersrc_add_frame(m_bufSrcCtxs[i], audfrm.get());
@@ -755,8 +760,9 @@ private:
                                 else
                                     amat = frontMat;
                             }
+                            corFrames[0].frame = amat;
                             lock_guard<mutex> lk(m_outputMatsLock);
-                            m_outputMats.push_back(amat);
+                            m_outputMats.push_back(corFrames);
                             idleLoop = false;
                         }
                         else
@@ -785,8 +791,9 @@ private:
                         m_samplePos += m_outSamplesPerFrame;
                     else
                         m_samplePos -= m_outSamplesPerFrame;
+                    corFrames[0].frame = amat;
                     lock_guard<mutex> lk(m_outputMatsLock);
-                    m_outputMats.push_back(amat);
+                    m_outputMats.push_back(corFrames);
                     idleLoop = false;
                 }
             }
@@ -826,7 +833,7 @@ private:
     bool m_eof{false};
 
     AudioImMatAVFrameConverter* m_matAvfrmCvter{nullptr};
-    list<ImGui::ImMat> m_outputMats;
+    list<vector<CorrelativeFrame>> m_outputMats;
     mutex m_outputMatsLock;
     uint32_t m_outputMatsMaxCount{32};
 
