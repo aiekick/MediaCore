@@ -230,7 +230,7 @@ namespace MediaCore
                 m_eof = eof = true;
 
             if (m_filter)
-                amat = m_filter->FilterPcm(amat, (int64_t)(amat.time_stamp*1000));
+                amat = m_filter->FilterPcm(amat, (int64_t)(amat.time_stamp*1000) - m_start);
             return amat;
         }
 
