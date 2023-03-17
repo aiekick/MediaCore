@@ -23,22 +23,7 @@ const string c_imguiIniPath = "ms_test.ini";
 const string c_bookmarkPath = "bookmark.ini";
 
 // Application Framework Functions
-void Application_GetWindowProperties(ApplicationWindowProperty& property)
-{
-    property.name = "MediaSnapshotTest";
-    property.viewport = false;
-    property.docking = false;
-    property.auto_merge = false;
-    //property.power_save = false;
-    property.width = 1280;
-    property.height = 720;
-}
-
-void Application_SetupContext(ImGuiContext* ctx)
-{
-}
-
-void Application_Initialize(void** handle)
+static void MediaSnapshot_Initialize(void** handle)
 {
     GetDefaultLogger()
         ->SetShowLevels(DEBUG);
@@ -71,7 +56,7 @@ void Application_Initialize(void** handle)
     g_ssvw1 = g_ssgen->CreateViewer(0);
 }
 
-void Application_Finalize(void** handle)
+static void MediaSnapshot_Finalize(void** handle)
 {
     g_ssgen->ReleaseViewer(g_ssvw1);
     g_ssgen = nullptr;
@@ -87,12 +72,7 @@ void Application_Finalize(void** handle)
 #endif
 }
 
-void Application_DropFromSystem(std::vector<std::string>& drops)
-{
-
-}
-
-bool Application_Frame(void * handle, bool app_will_quit)
+static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
 {
     bool app_done = false;
     auto& io = ImGui::GetIO();
@@ -202,4 +182,18 @@ bool Application_Frame(void * handle, bool app_will_quit)
     }
 
     return app_done;
+}
+
+void Application_Setup(ApplicationWindowProperty& property)
+{
+    property.name = "MediaSnapshotTest";
+    property.viewport = false;
+    property.docking = false;
+    property.auto_merge = false;
+    //property.power_save = false;
+    property.width = 1280;
+    property.height = 720;
+    property.application.Application_Initialize = MediaSnapshot_Initialize;
+    property.application.Application_Finalize = MediaSnapshot_Finalize;
+    property.application.Application_Frame = MediaSnapshot_Frame;
 }

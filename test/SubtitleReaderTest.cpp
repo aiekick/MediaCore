@@ -23,22 +23,7 @@ static vector<string> g_fontFamilies;
 static int g_clipTime[2];
 
 // Application Framework Functions
-void Application_GetWindowProperties(ApplicationWindowProperty& property)
-{
-    property.name = "SubtitleReaderTest";
-    property.viewport = false;
-    property.docking = false;
-    property.auto_merge = false;
-    //property.power_save = false;
-    property.width = 960;
-    property.height = 840;
-}
-
-void Application_SetupContext(ImGuiContext* ctx)
-{
-}
-
-void Application_Initialize(void** handle)
+static void SubtitleReader_Initialize(void** handle)
 {
     GetDefaultLogger()
         ->SetShowLevels(DEBUG);
@@ -75,7 +60,7 @@ void Application_Initialize(void** handle)
     io.IniFilename = c_imguiIniPath.c_str();
 }
 
-void Application_Finalize(void** handle)
+static void SubtitleReader_Finalize(void** handle)
 {
     if (g_imageTid)
     {
@@ -381,12 +366,7 @@ static void UIComponent_ClipStyle(SubtitleClipHolder hSubClip)
         hSubClip->SetBackgroundColor(bgColor);
 }
 
-void Application_DropFromSystem(std::vector<std::string>& drops)
-{
-
-}
-
-bool Application_Frame(void * handle, bool app_will_quit)
+static bool SubtitleReader_Frame(void * handle, bool app_will_quit)
 {
     bool app_done = false;
     auto& io = ImGui::GetIO();
@@ -667,4 +647,19 @@ bool Application_Frame(void * handle, bool app_will_quit)
     }
 
     return app_done;
+}
+
+void Application_Setup(ApplicationWindowProperty& property)
+{
+    property.name = "SubtitleReaderTest";
+    property.viewport = false;
+    property.docking = false;
+    property.auto_merge = false;
+    //property.power_save = false;
+    property.width = 960;
+    property.height = 840;
+
+    property.application.Application_Initialize = SubtitleReader_Initialize;
+    property.application.Application_Finalize = SubtitleReader_Finalize;
+    property.application.Application_Frame = SubtitleReader_Frame;
 }

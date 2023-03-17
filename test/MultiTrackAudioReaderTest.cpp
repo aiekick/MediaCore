@@ -94,22 +94,7 @@ static SimplePcmStream* g_pcmStream = nullptr;
 
 
 // Application Framework Functions
-void Application_GetWindowProperties(ApplicationWindowProperty& property)
-{
-    property.name = "MultiTrackAudioReaderTest";
-    property.viewport = false;
-    property.docking = false;
-    property.auto_merge = false;
-    //property.power_save = false;
-    property.width = 1280;
-    property.height = 720;
-}
-
-void Application_SetupContext(ImGuiContext* ctx)
-{
-}
-
-void Application_Initialize(void** handle)
+static void MultiTrackAudioReader_Initialize(void** handle)
 {
     GetDefaultLogger()
         ->SetShowLevels(DEBUG);
@@ -142,7 +127,7 @@ void Application_Initialize(void** handle)
     g_audrnd->OpenDevice(c_audioRenderSampleRate, c_audioRenderChannels, c_audioRenderFormat, g_pcmStream);
 }
 
-void Application_Finalize(void** handle)
+static void MultiTrackAudioReader_Finalize(void** handle)
 {
     if (g_audrnd)
     {
@@ -165,11 +150,6 @@ void Application_Finalize(void** handle)
 		configFileWriter.close();
 	}
 #endif
-}
-
-void Application_DropFromSystem(std::vector<std::string>& drops)
-{
-
 }
 
 static uint32_t s_addClipOptSelIdx = 0;
@@ -352,7 +332,7 @@ void DrawAudioEffectSettingsWindow(AudioEffectFilterHolder aeFilter)
     }
 }
 
-bool Application_Frame(void * handle, bool app_will_quit)
+static bool MultiTrackAudioReader_Frame(void * handle, bool app_will_quit)
 {
     bool app_done = false;
     auto& io = ImGui::GetIO();
@@ -710,4 +690,19 @@ bool Application_Frame(void * handle, bool app_will_quit)
     }
 
     return app_done;
+}
+
+void Application_Setup(ApplicationWindowProperty& property)
+{
+    property.name = "MultiTrackAudioReaderTest";
+    property.viewport = false;
+    property.docking = false;
+    property.auto_merge = false;
+    //property.power_save = false;
+    property.width = 1280;
+    property.height = 720;
+
+    property.application.Application_Initialize = MultiTrackAudioReader_Initialize;
+    property.application.Application_Finalize = MultiTrackAudioReader_Finalize;
+    property.application.Application_Frame = MultiTrackAudioReader_Frame;
 }

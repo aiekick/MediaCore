@@ -42,22 +42,6 @@ static ImVec2 g_imageDisplaySize = { 640, 440 };
 const string c_imguiIniPath = "ms_test.ini";
 const string c_bookmarkPath = "bookmark.ini";
 
-// Application Framework Functions
-void Application_GetWindowProperties(ApplicationWindowProperty& property)
-{
-    property.name = "Multi-track Video Reader Test";
-    property.viewport = false;
-    property.docking = false;
-    property.auto_merge = false;
-    //property.power_save = false;
-    property.width = 1280;
-    property.height = 840;
-}
-
-void Application_SetupContext(ImGuiContext* ctx)
-{
-}
-
 static uint32_t s_addClipOptSelIdx = 0;
 static double s_addClipStart = 0;
 static double s_addClipStartOffset = 0;
@@ -73,7 +57,7 @@ static vector<string> s_fitScaleTypeSelections;
 static int s_fitScaleTypeSelIdx = 0;
 static bool s_showClipSourceFrame = false;
 
-void Application_Initialize(void** handle)
+static void MultiTrackVideoReader_Initialize(void** handle)
 {
     GetDefaultLogger()
         ->SetShowLevels(DEBUG);
@@ -106,7 +90,7 @@ void Application_Initialize(void** handle)
     g_mtVidReader->Start();
 }
 
-void Application_Finalize(void** handle)
+static void MultiTrackVideoReader_Finalize(void** handle)
 {
     ReleaseMultiTrackVideoReader(&g_mtVidReader);
 
@@ -123,12 +107,7 @@ void Application_Finalize(void** handle)
 #endif
 }
 
-void Application_DropFromSystem(std::vector<std::string>& drops)
-{
-
-}
-
-bool Application_Frame(void * handle, bool app_will_quit)
+static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
 {
     bool app_done = false;
     auto& io = ImGui::GetIO();
@@ -680,4 +659,19 @@ bool Application_Frame(void * handle, bool app_will_quit)
     }
 
     return app_done;
+}
+
+void Application_Setup(ApplicationWindowProperty& property)
+{
+    property.name = "Multi-track Video Reader Test";
+    property.viewport = false;
+    property.docking = false;
+    property.auto_merge = false;
+    //property.power_save = false;
+    property.width = 1280;
+    property.height = 840;
+
+    property.application.Application_Initialize = MultiTrackVideoReader_Initialize;
+    property.application.Application_Finalize = MultiTrackVideoReader_Finalize;
+    property.application.Application_Frame = MultiTrackVideoReader_Frame;
 }
