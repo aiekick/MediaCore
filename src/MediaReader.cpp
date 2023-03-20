@@ -587,6 +587,7 @@ public:
 
     bool ReadVideoFrame(double pos, ImGui::ImMat& m, bool& eof, bool wait) override
     {
+        m.release();
         if (!m_started)
         {
             m_errMsg = "This 'MediaReader' instance is NOT STARTED yet!";
@@ -598,7 +599,12 @@ public:
             eof = true;
             return false;
         }
-        while (!m_quitThread && !m_prepared)
+        if (!wait && !m_prepared)
+        {
+            eof = false;
+            return true;
+        }
+        while (!m_quitThread && !m_prepared && wait)
             this_thread::sleep_for(chrono::milliseconds(5));
         if (m_close)
         {

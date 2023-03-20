@@ -20,6 +20,8 @@ using namespace std;
 using namespace Logger;
 using Clock = chrono::steady_clock;
 
+static bool g_isOpening = false;
+static MediaParserHolder g_mediaParser;
 static bool g_videoOnly = false;
 static bool g_audioOnly = false;
 static bool g_useHwAccel = true;
@@ -50,6 +52,10 @@ FILE* g_fpPcmFile = NULL;
 
 const string c_imguiIniPath = "ms_test.ini";
 const string c_bookmarkPath = "bookmark.ini";
+
+static auto GetMilliCount = [] (const chrono::time_point<chrono::system_clock>& t0, const chrono::time_point<chrono::system_clock>& t1) {
+    return chrono::duration_cast<chrono::milliseconds>(t1-t0).count();
+};
 
 class SimplePcmStream : public AudioRender::ByteStream
 {
@@ -169,8 +175,10 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
                                                     ImGuiFileDialogFlags_ShowBookmark | ImGuiFileDialogFlags_Modal);
         }
 
+        bool isFileOpened = g_vidrdr->IsOpened() || g_audrdr->IsOpened();
+
         ImGui::SameLine();
-        ImGui::BeginDisabled(g_audioStreamCount < 2);
+        ImGui::BeginDisabled(!isFileOpened || g_audioStreamCount < 2);
         ImGui::PushItemWidth(100);
         ostringstream audstmOptTagOss;
         audstmOptTagOss << g_chooseAudioIndex;
@@ -227,6 +235,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
         if (playPos < 0) playPos = 0;
         if (playPos > mediaDur) playPos = mediaDur;
 
+        ImGui::BeginDisabled(!isFileOpened);
         ImGui::SameLine();
         string playBtnLabel = g_isPlay ? "Pause" : "Play ";
         if (ImGui::Button(playBtnLabel.c_str()))
@@ -274,6 +283,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
             else
                 g_vidrdr->Suspend();
         }
+        ImGui::EndDisabled();
 
         ImGui::SameLine();
         string cdurBtnLabel = g_isLongCacheDur ? "Short cache duration" : "Long cache duration";
@@ -293,6 +303,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
         ImGui::SameLine();
         ImGui::Checkbox("Use HW Accelaration", &g_useHwAccel);
 
+        ImGui::BeginDisabled(!isFileOpened);
         ImGui::Spacing();
         if (ImGui::SliderFloat("Position", &playPos, 0, mediaDur, "%.3f"))
         {
@@ -303,6 +314,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
             g_playStartPos = playPos;
             g_playStartTp = Clock::now();
         }
+        ImGui::EndDisabled();
 
         ImGui::Spacing();
         string imgTag;
@@ -310,7 +322,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
         {
             bool eof;
             ImGui::ImMat vmat;
-            if (g_vidrdr->ReadVideoFrame(playPos, vmat, eof))
+            if (g_vidrdr->ReadVideoFrame(playPos, vmat, eof, false))
             {
                 imgTag = TimestampToString(vmat.time_stamp);
                 bool imgValid = true;
@@ -348,7 +360,41 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
         string audTag = oss.str();
         ImGui::TextUnformatted(audTag.c_str());
 
-        ImGui::End();
+        if (g_isOpening)
+        {
+            ostringstream oss;
+            oss << "Opening '" << g_mediaParser->GetUrl() << "' ...";
+            string txt = oss.str();
+            ImGui::TextUnformatted(txt.c_str());
+
+            if (g_mediaParser->CheckInfoReady(MediaParser::MEDIA_INFO))
+            {
+                if (g_mediaParser->HasVideo() && !g_audioOnly)
+                {
+                    g_vidrdr->EnableHwAccel(g_useHwAccel);
+                    g_vidrdr->Open(g_mediaParser);
+                    g_vidrdr->ConfigVideoReader((uint32_t)g_imageDisplaySize.x, (uint32_t)g_imageDisplaySize.y);
+                    g_vidrdr->Start();
+                }
+                if (g_mediaParser->HasAudio() && !g_videoOnly)
+                {
+                    g_audrdr->Open(g_mediaParser);
+                    auto mediaInfo = g_mediaParser->GetMediaInfo();
+                    for (auto stream : mediaInfo->streams)
+                    {
+                        if (stream->type == MediaInfo::AUDIO)
+                            g_audioStreamCount++;
+                    }
+                    g_chooseAudioIndex = 0;
+                    g_audrdr->ConfigAudioReader(c_audioRenderChannels, c_audioRenderSampleRate, "flt", g_chooseAudioIndex);
+                    g_audrdr->Start();
+                }
+                if (!g_vidrdr->IsOpened() && !g_audrdr->IsOpened())
+                    Log(Error) << "Neither VIDEO nor AUDIO stream is ready for playback!" << endl;
+                g_isOpening = false;
+            }
+        }
+        ImGui::End(); // 'MainWindow' ends here
     }
 
     // open file dialog
@@ -368,30 +414,9 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
             g_imageTid = nullptr;
             g_isLongCacheDur = false;
             string filePathName = ImGuiFileDialog::Instance()->GetFilePathName();
-            MediaParserHolder hParser = CreateMediaParser();
-            hParser->Open(filePathName);
-            if (hParser->HasVideo() && !g_audioOnly)
-            {
-                g_vidrdr->EnableHwAccel(g_useHwAccel);
-                g_vidrdr->Open(hParser);
-                g_vidrdr->ConfigVideoReader((uint32_t)g_imageDisplaySize.x, (uint32_t)g_imageDisplaySize.y);
-                g_vidrdr->Start();
-            }
-            if (hParser->HasAudio() && !g_videoOnly)
-            {
-                g_audrdr->Open(hParser);
-                auto mediaInfo = hParser->GetMediaInfo();
-                for (auto stream : mediaInfo->streams)
-                {
-                    if (stream->type == MediaInfo::AUDIO)
-                        g_audioStreamCount++;
-                }
-                g_chooseAudioIndex = 0;
-                g_audrdr->ConfigAudioReader(c_audioRenderChannels, c_audioRenderSampleRate, "flt", g_chooseAudioIndex);
-                g_audrdr->Start();
-            }
-            if (!g_vidrdr->IsOpened() && !g_audrdr->IsOpened())
-                Log(Error) << "Neither VIDEO nor AUDIO stream is ready for playback!" << endl;
+            g_mediaParser = CreateMediaParser();
+            g_mediaParser->Open(filePathName);
+            g_isOpening = true;
         }
         ImGuiFileDialog::Instance()->Close();
     }
