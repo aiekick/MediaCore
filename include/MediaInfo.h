@@ -37,6 +37,7 @@ namespace MediaInfo
         VideoStream() { type = VIDEO; }
         uint32_t width{0};
         uint32_t height{0};
+        std::string format;
         Ratio sampleAspectRatio;
         Ratio avgFrameRate;
         Ratio realFrameRate;
@@ -51,6 +52,7 @@ namespace MediaInfo
         AudioStream() { type = AUDIO; }
         uint32_t channels{0};
         uint32_t sampleRate{0};
+        std::string format;
         uint8_t bitDepth{0};
     };
 
@@ -65,6 +67,7 @@ namespace MediaInfo
         std::vector<StreamHolder> streams;
         double startTime{0};
         double duration{-1};
+        bool isComplete{true};
     };
 
     using InfoHolder = std::shared_ptr<Info>;

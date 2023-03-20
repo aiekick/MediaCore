@@ -312,6 +312,33 @@ private:
         }
 
         m_hMediaInfo = GenerateMediaInfoByAVFormatContext(m_avfmtCtx);
+        if (!m_hMediaInfo->isComplete)
+        {
+            m_logger->Log(INFO) << "MediaInfo is NOT COMPLETE. Try to parse the media again with LARGER probe size." << endl;
+            AVFormatContext* avfmtCtx = nullptr;
+            fferr = avformat_open_input(&avfmtCtx, m_url.c_str(), nullptr, nullptr);
+            if (fferr < 0)
+            {
+                m_logger->Log(WARN) << "FAILED to open media '" << m_url << "' again!" << endl;
+            }
+            else
+            {
+                m_logger->Log(INFO) << "Increase 'probesize' to 5000000." << endl;
+                av_opt_set_int(avfmtCtx, "probesize", 5000000, 0);
+                fferr = avformat_find_stream_info(avfmtCtx, nullptr);
+                if (fferr < 0)
+                {
+                    avformat_close_input(&avfmtCtx);
+                    hTask->errMsg = FFapiFailureMessage("avformat_find_stream_info", fferr);
+                    return false;
+                }
+                m_hMediaInfo = GenerateMediaInfoByAVFormatContext(avfmtCtx);
+
+                lock_guard<recursive_mutex> lk(m_apiLock);
+                avformat_close_input(&m_avfmtCtx);
+                m_avfmtCtx = avfmtCtx;
+            }
+        }
         m_bestVidStmIdx = av_find_best_stream(m_avfmtCtx, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
         m_bestAudStmIdx = av_find_best_stream(m_avfmtCtx, AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
         m_logger->Log(DEBUG) << "Parse general media info done." << endl;
