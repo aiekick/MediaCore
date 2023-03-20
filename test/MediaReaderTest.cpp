@@ -53,10 +53,6 @@ FILE* g_fpPcmFile = NULL;
 const string c_imguiIniPath = "ms_test.ini";
 const string c_bookmarkPath = "bookmark.ini";
 
-static auto GetMilliCount = [] (const chrono::time_point<chrono::system_clock>& t0, const chrono::time_point<chrono::system_clock>& t1) {
-    return chrono::duration_cast<chrono::milliseconds>(t1-t0).count();
-};
-
 class SimplePcmStream : public AudioRender::ByteStream
 {
 public:

@@ -8,8 +8,10 @@
 #include "SnapshotGenerator.h"
 #include "FFUtils.h"
 #include "Logger.h"
+#include "DebugHelper.h"
 
 using namespace std;
+using namespace MediaCore;
 using namespace Logger;
 
 static MediaOverview* g_movr = nullptr;
@@ -115,7 +117,11 @@ static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
         ImGui::Spacing();
 
         vector<SnapshotGenerator::ImageHolder> snapshots;
-        if (!g_ssvw1->GetSnapshots(pos, snapshots))
+        // auto t0 = GetTimePoint();
+        bool ret = g_ssvw1->GetSnapshots(pos, snapshots);
+        // auto t1 = GetTimePoint();
+        // Log(WARN) << "<TimeCost> GetSnapshots() : " << CountElapsedMillisec(t0, t1) << endl;
+        if (!ret)
             snapshots.clear();
         else
             g_ssvw1->UpdateSnapshotTexture(snapshots);

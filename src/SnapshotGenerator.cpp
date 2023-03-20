@@ -12,6 +12,7 @@
 #include "imgui_helper.h"
 #include "SnapshotGenerator.h"
 #include "FFUtils.h"
+#include "DebugHelper.h"
 extern "C"
 {
     #include "libavutil/avutil.h"
@@ -28,6 +29,7 @@ extern "C"
 }
 
 using namespace std;
+using namespace MediaCore;
 using namespace Logger;
 
 static AVPixelFormat get_hw_format(AVCodecContext *ctx, const AVPixelFormat *pix_fmts);
@@ -144,11 +146,20 @@ public:
 
     bool GetSnapshots(double startPos, std::vector<ImageHolder>& images)
     {
-        lock_guard<recursive_mutex> lk(m_apiLock);
-        if (!IsOpened())
-            return false;
-
         images.clear();
+        if (!IsOpened())
+        {
+            m_errMsg = "NOT OPENED yet!";
+            return false;
+        }
+        if (!m_prepared)
+            return true;
+        lock_guard<recursive_mutex> lk(m_apiLock);
+        if (!IsOpened())  // double check within the lock protected range, in case another thread closed this instance
+        {
+            m_errMsg = "NOT OPENED yet!";
+            return false;
+        }
 
         int32_t idx0 = CalcSsIndexFromTs(startPos);
         if (idx0 < 0) idx0 = 0; if (idx0 > m_vidMaxIndex) idx0 = m_vidMaxIndex;
@@ -516,43 +527,39 @@ private:
         m_hMediaInfo = hParser->GetMediaInfo();
         m_vidStmIdx = hParser->GetBestVideoStreamIndex();
         m_audStmIdx = hParser->GetBestAudioStreamIndex();
-        if (m_vidStmIdx < 0 && m_audStmIdx < 0)
+        if (m_vidStmIdx < 0)
         {
             ostringstream oss;
-            oss << "Neither video nor audio stream can be found in '" << m_avfmtCtx->url << "'.";
+            oss << "No video stream can be found in '" << m_avfmtCtx->url << "'.";
             m_errMsg = oss.str();
             return false;
         }
 
-        if (HasVideo())
-        {
-            MediaInfo::VideoStream* vidStream = dynamic_cast<MediaInfo::VideoStream*>(m_hMediaInfo->streams[m_vidStmIdx].get());
-            m_vidStartMts = (int64_t)(vidStream->startTime*1000);
-            m_vidDurMts = (int64_t)(vidStream->duration*1000);
-            m_vidFrmCnt = vidStream->frameNum;
-            AVRational avgFrmRate = { vidStream->avgFrameRate.num, vidStream->avgFrameRate.den };
-            AVRational timebase = { vidStream->timebase.num, vidStream->timebase.den };
-            m_vidfrmIntvMts = av_q2d(av_inv_q(avgFrmRate))*1000.;
-            m_vidfrmIntvMtsHalf = ceil(m_vidfrmIntvMts)/2;
-            m_vidfrmIntvPts = av_rescale_q(1, av_inv_q(avgFrmRate), timebase);
-            m_vidfrmIntvPtsHalf = m_vidfrmIntvPts/2;
+        MediaInfo::VideoStream* vidStream = dynamic_cast<MediaInfo::VideoStream*>(m_hMediaInfo->streams[m_vidStmIdx].get());
+        m_vidStartMts = (int64_t)(vidStream->startTime*1000);
+        m_vidDurMts = (int64_t)(vidStream->duration*1000);
+        m_vidFrmCnt = vidStream->frameNum;
+        AVRational avgFrmRate = { vidStream->avgFrameRate.num, vidStream->avgFrameRate.den };
+        AVRational timebase = { vidStream->timebase.num, vidStream->timebase.den };
+        m_vidfrmIntvMts = av_q2d(av_inv_q(avgFrmRate))*1000.;
+        m_vidfrmIntvMtsHalf = ceil(m_vidfrmIntvMts)/2;
+        m_vidfrmIntvPts = av_rescale_q(1, av_inv_q(avgFrmRate), timebase);
+        m_vidfrmIntvPtsHalf = m_vidfrmIntvPts/2;
 
-            if (m_useRszFactor)
+        if (m_useRszFactor)
+        {
+            uint32_t outWidth = (uint32_t)ceil(vidStream->width*m_ssWFacotr);
+            if ((outWidth&0x1) == 1)
+                outWidth++;
+            uint32_t outHeight = (uint32_t)ceil(vidStream->height*m_ssHFacotr);
+            if ((outHeight&0x1) == 1)
+                outHeight++;
+            if (!m_frmCvt.SetOutSize(outWidth, outHeight))
             {
-                uint32_t outWidth = (uint32_t)ceil(vidStream->width*m_ssWFacotr);
-                if ((outWidth&0x1) == 1)
-                    outWidth++;
-                uint32_t outHeight = (uint32_t)ceil(vidStream->height*m_ssHFacotr);
-                if ((outHeight&0x1) == 1)
-                    outHeight++;
-                if (!m_frmCvt.SetOutSize(outWidth, outHeight))
-                {
-                    m_errMsg = m_frmCvt.GetError();
-                    return false;
-                }
+                m_errMsg = m_frmCvt.GetError();
+                return false;
             }
         }
-
         return true;
     }
 
@@ -1366,7 +1373,6 @@ private:
 
     SnapWindow CreateSnapWindow(double wndpos)
     {
-        lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_prepared)
             return { wndpos, -1, -1, -1, -1, INT64_MIN, INT64_MIN };
         int32_t index0 = CalcSsIndexFromTs(wndpos);
@@ -1816,13 +1822,10 @@ private:
         {
             // free deprecated textures
             {
-                m_logger->Log(VERBOSE) << "[3]===== Begin release texture" << endl;
                 lock_guard<mutex> lktid(m_owner->m_deprecatedTextureLock);
                 m_owner->m_deprecatedTextures.clear();
-                m_logger->Log(VERBOSE) << "[3]===== End release texture" << endl;
             }
 
-            m_logger->Log(VERBOSE) << "[2]----- Begin generate texture" << endl;
             for (auto& img : snapshots)
             {
                 if (img->mTextureReady)
@@ -1831,19 +1834,13 @@ private:
                 {
                     img->mTextureHolder = TextureHolder(new ImTextureID(0), [this] (ImTextureID* pTid) {
                         if (*pTid)
-                        {
-                            GetSnapshotGeneratorLogger()->Log(VERBOSE) << "[3]\t\t\treleasing tid=" << *pTid << endl;
                             ImGui::ImDestroyTexture(*pTid);
-                        }
                         delete pTid;
                     });
-                    m_logger->Log(VERBOSE) << "[2]\tbefore generate tid=" << *(img->mTextureHolder) << endl;
                     ImMatToTexture(img->mImgMat, *(img->mTextureHolder));
-                    m_logger->Log(VERBOSE) << "[2]\tgenerated tid=" << *(img->mTextureHolder) << endl;
                     img->mTextureReady = true;
                 }
             }
-            m_logger->Log(VERBOSE) << "[2]----- End generate texture" << endl;
             return true;
         }
 
