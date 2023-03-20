@@ -29,4 +29,5 @@ namespace MediaCore
         int64_t trackId;
         ImGui::ImMat frame;
     };
+    MEDIACORE_API void GetVersion(int& major, int& minor, int& patch, int& build);
 }
