@@ -43,7 +43,7 @@ namespace MediaCore
         static VideoClipHolder CreateVideoInstance(
             int64_t id, MediaParserHolder hParser,
             uint32_t outWidth, uint32_t outHeight, const MediaInfo::Ratio& frameRate,
-            int64_t start, int64_t startOffset, int64_t endOffset, int64_t readpos);
+            int64_t start, int64_t startOffset, int64_t endOffset, int64_t readpos, bool forward);
         static VideoClipHolder CreateImageInstance(
             int64_t id, MediaParserHolder hParser,
             uint32_t outWidth, uint32_t outHeight, int64_t start, int64_t duration);

@@ -19,6 +19,7 @@
 #include <algorithm>
 #include "VideoTrack.h"
 #include "MediaCore.h"
+#include "DebugHelper.h"
 
 using namespace std;
 
@@ -80,7 +81,7 @@ namespace MediaCore
         if (vidstream->isImage)
             hClip = VideoClip::CreateImageInstance(clipId, hParser, m_outWidth, m_outHeight, start, startOffset);
         else
-            hClip = VideoClip::CreateVideoInstance(clipId, hParser, m_outWidth, m_outHeight, m_frameRate, start, startOffset, endOffset, readPos-start);
+            hClip = VideoClip::CreateVideoInstance(clipId, hParser, m_outWidth, m_outHeight, m_frameRate, start, startOffset, endOffset, readPos-start, m_readForward);
         InsertClip(hClip);
         return hClip;
     }

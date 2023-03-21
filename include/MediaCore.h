@@ -31,20 +31,21 @@
 
 namespace MediaCore
 {
-    struct CorrelativeFrame
+struct CorrelativeFrame
+{
+    enum Phase
     {
-        enum Phase
-        {
-            PHASE_SOURCE_FRAME = 0,
-            PHASE_AFTER_FILTER,
-            PHASE_AFTER_TRANSFORM,
-            PHASE_AFTER_AUDIOEFFECT,
-            PHASE_AFTER_TRANSITION,
-            PHASE_AFTER_MIXING,
-        } phase;
-        int64_t clipId;
-        int64_t trackId;
-        ImGui::ImMat frame;
-    };
-    MEDIACORE_API void GetVersion(int& major, int& minor, int& patch, int& build);
+        PHASE_SOURCE_FRAME = 0,
+        PHASE_AFTER_FILTER,
+        PHASE_AFTER_TRANSFORM,
+        PHASE_AFTER_AUDIOEFFECT,
+        PHASE_AFTER_TRANSITION,
+        PHASE_AFTER_MIXING,
+    } phase;
+    int64_t clipId;
+    int64_t trackId;
+    ImGui::ImMat frame;
+};
+
+MEDIACORE_API void GetVersion(int& major, int& minor, int& patch, int& build);
 }

@@ -39,6 +39,7 @@ extern "C"
     #include "libswscale/swscale.h"
     #include "libswresample/swresample.h"
 }
+#include "DebugHelper.h"
 
 using namespace std;
 using namespace Logger;
@@ -531,6 +532,8 @@ public:
 
     void SetDirection(bool forward) override
     {
+        if (m_readForward == forward)
+            return;
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_opened)
         {

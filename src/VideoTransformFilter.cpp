@@ -33,12 +33,17 @@ namespace MediaCore
         {
 #if IMGUI_VULKAN_SHADER
             if (m_useVulkan)
-                m_filter = &m_vkImpl;
+                m_filter = new VideoTransformFilter_VulkanImpl();
             else
-                m_filter = &m_ffImpl;
+                m_filter = new VideoTransformFilter_FFImpl();
 #else
-            m_filter = &m_ffImpl;
+            m_filter = new VideoTransformFilter_FFImpl();
 #endif
+        }
+
+        ~VideoTransformFilter_Delegate()
+        {
+            delete m_filter;
         }
 
         const string GetFilterName() const override
@@ -232,9 +237,7 @@ namespace MediaCore
 
     private:
         VideoTransformFilter* m_filter;
-        VideoTransformFilter_FFImpl m_ffImpl;
 #if IMGUI_VULKAN_SHADER
-        VideoTransformFilter_VulkanImpl m_vkImpl;
         bool m_useVulkan{true};
 #endif
     };

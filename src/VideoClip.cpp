@@ -23,7 +23,7 @@
 #include "VideoClip.h"
 #include "VideoTransformFilter.h"
 #include "Logger.h"
-#include "MediaCore.h"
+#include "DebugHelper.h"
 
 using namespace std;
 using namespace Logger;
@@ -51,7 +51,7 @@ namespace MediaCore
         VideoClip_VideoImpl(
             int64_t id, MediaParserHolder hParser,
             uint32_t outWidth, uint32_t outHeight, const MediaInfo::Ratio& frameRate,
-            int64_t start, int64_t startOffset, int64_t endOffset, int64_t readpos)
+            int64_t start, int64_t startOffset, int64_t endOffset, int64_t readpos, bool forward)
             : m_id(id), m_start(start)
         {
             m_hInfo = hParser->GetMediaInfo();
@@ -78,6 +78,7 @@ namespace MediaCore
                 throw invalid_argument("Argument 'startOffset/endOffset', clip duration is NOT LARGER than 0!");
             m_startOffset = startOffset;
             m_endOffset = endOffset;
+            m_srcReader->SetDirection(forward);
             if (!m_srcReader->SeekTo((double)startOffset/1000))
                 throw runtime_error(m_srcReader->GetError());
             bool suspend = readpos < -m_wakeupRange || readpos > Duration()+m_wakeupRange;
@@ -97,7 +98,7 @@ namespace MediaCore
         VideoClipHolder Clone(uint32_t outWidth, uint32_t outHeight, const MediaInfo::Ratio& frameRate) const override
         {
             VideoClip_VideoImpl* newInstance = new VideoClip_VideoImpl(
-                m_id, m_srcReader->GetMediaParser(), outWidth, outHeight, frameRate, m_start, m_startOffset, m_endOffset, 0);
+                m_id, m_srcReader->GetMediaParser(), outWidth, outHeight, frameRate, m_start, m_startOffset, m_endOffset, 0, true);
             if (m_filter) newInstance->SetFilter(m_filter->Clone());
             newInstance->m_transFilter = m_transFilter->Clone(outWidth, outHeight);
             return VideoClipHolder(newInstance);
@@ -548,9 +549,9 @@ namespace MediaCore
     VideoClipHolder VideoClip::CreateVideoInstance(
             int64_t id, MediaParserHolder hParser,
             uint32_t outWidth, uint32_t outHeight, const MediaInfo::Ratio& frameRate,
-            int64_t start, int64_t startOffset, int64_t endOffset, int64_t readpos)
+            int64_t start, int64_t startOffset, int64_t endOffset, int64_t readpos, bool forward)
     {
-        return VideoClipHolder(new VideoClip_VideoImpl(id, hParser, outWidth, outHeight, frameRate, start, startOffset, endOffset, readpos));
+        return VideoClipHolder(new VideoClip_VideoImpl(id, hParser, outWidth, outHeight, frameRate, start, startOffset, endOffset, readpos, true));
     }
 
     VideoClipHolder VideoClip::CreateImageInstance(

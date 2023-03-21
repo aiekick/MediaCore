@@ -17,6 +17,9 @@
 
 #pragma once
 #include <chrono>
+#include <string>
+#include "MediaCore.h"
+#include "Logger.h"
 
 namespace MediaCore
 {
@@ -33,5 +36,8 @@ namespace MediaCore
         return std::chrono::duration_cast<std::chrono::milliseconds>(t1-t0).count();
     }
 
-    int64_t GetMillisecFromTimePoint(const TimePoint& tp);
+    MEDIACORE_API int64_t GetMillisecFromTimePoint(const TimePoint& tp);
+
+    MEDIACORE_API void AddCheckPoint(const std::string& name);
+    MEDIACORE_API void LogCheckPointsTimeInfo(Logger::ALogger* logger = nullptr, Logger::Level loglvl = Logger::DEBUG);
 }
