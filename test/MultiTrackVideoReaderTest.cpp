@@ -625,7 +625,8 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
                     clipId, hParser,
                     hTrack->OutWidth(), hTrack->OutHeight(), hTrack->FrameRate(),
                     (int64_t)(s_addClipStart*1000), (int64_t)(s_addClipStartOffset*1000), (int64_t)(s_addClipEndOffset*1000),
-                    (int64_t)((playPos-s_addClipStart)*1000));
+                    (int64_t)((playPos-s_addClipStart)*1000),
+                    g_playForward);
             }
             hTrack->InsertClip(hClip);
             g_mtVidReader->Refresh();
