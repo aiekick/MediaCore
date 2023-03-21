@@ -15,4 +15,6 @@ namespace MediaCore
     {
         return std::chrono::duration_cast<std::chrono::milliseconds>(t1-t0).count();
     }
+
+    int64_t GetMillisecFromTimePoint(const TimePoint& tp);
 }

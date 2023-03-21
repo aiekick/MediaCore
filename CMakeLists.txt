@@ -84,6 +84,7 @@ add_library(MediaCore ${LIBRARY}
     ${LIB_SRC_DIR}/AudioClip.cpp
     ${LIB_SRC_DIR}/AudioTrack.cpp
     ${LIB_SRC_DIR}/AudioEffectFilter_FFImpl.cpp
+    ${LIB_SRC_DIR}/DebugHelper.cpp
     ${LIB_SRC_DIR}/FFUtils.cpp
     ${LIB_SRC_DIR}/FontDescriptor.cpp
     ${LIB_SRC_DIR}/FontManager_Fontconfig.cpp
