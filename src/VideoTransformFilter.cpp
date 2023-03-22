@@ -236,7 +236,7 @@ namespace MediaCore
         }
 
     private:
-        VideoTransformFilter* m_filter;
+        VideoTransformFilter_Base* m_filter;
 #if IMGUI_VULKAN_SHADER
         bool m_useVulkan{true};
 #endif

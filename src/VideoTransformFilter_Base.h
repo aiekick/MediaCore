@@ -24,6 +24,8 @@ namespace MediaCore
     class VideoTransformFilter_Base : public VideoTransformFilter
     {
     public:
+        virtual ~VideoTransformFilter_Base() {}
+
         uint32_t GetInWidth() const override
         { return m_inWidth; }
 
