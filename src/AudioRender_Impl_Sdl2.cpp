@@ -226,6 +226,8 @@ uint8_t AudioRender::GetBytesPerSampleByFormat(PcmFormat format)
         return 2;
     case PcmFormat::FLOAT32:
         return 4;
+    default:
+        break;
     }
     return 0;
 }
