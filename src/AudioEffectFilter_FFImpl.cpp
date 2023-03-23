@@ -39,13 +39,13 @@ public:
     AudioEffectFilter_FFImpl(const string& loggerName = "")
     {
         if (loggerName.empty())
-        {
             m_logger = GetAudioEffectFilterLogger();
-        }
         else
         {
             m_logger = GetLogger(loggerName);
-            m_logger->SetShowLevels(DEBUG);
+            int n;
+            Level l = GetAudioEffectFilterLogger()->GetShowLevels(n);
+            m_logger->SetShowLevels(l, n);
         }
     }
 

@@ -107,6 +107,17 @@ namespace Logger
             return this;
         }
 
+        string GetName() const override
+        {
+            return m_name;
+        }
+
+        Level GetShowLevels(int& n) const override
+        {
+            n = m_N;
+            return m_showLevel;
+        }
+
         virtual bool CheckShow(Level l) const
         {
             if ((m_N > 0 && l < m_showLevel) || (m_N < 0 && l > m_showLevel) || (m_N == 0 && l != m_showLevel))

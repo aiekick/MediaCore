@@ -39,6 +39,9 @@ namespace Logger
         virtual ALogger* SetShowLevels(Level l , int n = 1) = 0;
         virtual ALogger* SetShowLevelName(bool show) = 0;
         virtual ALogger* SetShowTime(bool show) = 0;
+
+        virtual std::string GetName() const = 0;
+        virtual Level GetShowLevels(int& n) const = 0;
     };
 
     MEDIACORE_API void SetSingleLogMaxSize(uint32_t size);

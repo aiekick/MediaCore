@@ -358,7 +358,7 @@ private:
         }
         m_bestVidStmIdx = av_find_best_stream(m_avfmtCtx, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
         m_bestAudStmIdx = av_find_best_stream(m_avfmtCtx, AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
-        m_logger->Log(DEBUG) << "Parse general media info done." << endl;
+        m_logger->Log(INFO) << "Parse general media info of media '" << m_url << "' done." << endl;
         return true;
     }
 
@@ -473,7 +473,7 @@ private:
         for (int64_t pts : vidSeekPoints)
             hSeekPoints->push_back(pts);
         m_hVidSeekPoints = hSeekPoints;
-        m_logger->Log(DEBUG) << "Parse video seek points done. " << vidSeekPoints.size() << " seek points are found." << endl;
+        m_logger->Log(INFO) << "Parse video seek points of media '" << m_url << "' done. " << vidSeekPoints.size() << " seek points are found." << endl;
         return true;
     }
 
