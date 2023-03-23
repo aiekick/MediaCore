@@ -20,6 +20,8 @@
 #include <string>
 #include "MediaCore.h"
 
+namespace MediaCore
+{
 struct AudioRender
 {
     enum class PcmFormat
@@ -45,7 +47,10 @@ struct AudioRender
     virtual uint32_t GetBufferedDataSize() = 0;
 
     virtual std::string GetError() const = 0;
+
+    MEDIACORE_API static uint8_t GetBytesPerSampleByFormat(PcmFormat format);
 };
 
 MEDIACORE_API AudioRender* CreateAudioRender();
 MEDIACORE_API void ReleaseAudioRender(AudioRender** audrnd);
+}

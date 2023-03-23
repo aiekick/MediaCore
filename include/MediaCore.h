@@ -42,8 +42,8 @@ struct CorrelativeFrame
         PHASE_AFTER_TRANSITION,
         PHASE_AFTER_MIXING,
     } phase;
-    int64_t clipId;
-    int64_t trackId;
+    int64_t clipId{0};
+    int64_t trackId{0};
     ImGui::ImMat frame;
 };
 

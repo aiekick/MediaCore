@@ -17,6 +17,7 @@
 #include "Logger.h"
 
 using namespace std;
+using namespace MediaCore;
 using namespace Logger;
 using Clock = chrono::steady_clock;
 

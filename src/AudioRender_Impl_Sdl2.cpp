@@ -55,6 +55,8 @@ static inline int log2_c(unsigned int v)
     return n;
 }
 
+namespace MediaCore
+{
 static void sdl_audio_callback(void *opaque, Uint8 *stream, int len);
 
 class AudioRender_Impl_Sdl2 : public AudioRender
@@ -107,6 +109,7 @@ public:
         m_channels = channels;
         m_pcmFormat = format;
         m_pcmStream = pcmStream;
+        m_renderBufferSize = obtainedAudSpec.samples*GetBytesPerSampleByFormat(format)*channels;
         return true;
     }
 
@@ -148,8 +151,8 @@ public:
     uint32_t GetBufferedDataSize() override
     {
         if (m_audDevId > 0)
-            return SDL_GetQueuedAudioSize(m_audDevId);
-        return 0;
+            return SDL_GetQueuedAudioSize(m_audDevId)+m_renderBufferSize;
+        return m_renderBufferSize;
     }
 
     string GetError() const override
@@ -188,6 +191,7 @@ private:
     SDL_AudioDeviceID m_audDevId{0};
     std::string m_errMessage;
     int64_t m_pcmdataEndTimestamp{0};
+    int32_t m_renderBufferSize{0};
 };
 
 void sdl_audio_callback(void *opaque, Uint8 *stream, int len)
@@ -211,4 +215,18 @@ void ReleaseAudioRender(AudioRender** audrnd)
     sdlrnd->CloseDevice();
     delete sdlrnd;
     *audrnd = nullptr;
+}
+
+uint8_t AudioRender::GetBytesPerSampleByFormat(PcmFormat format)
+{
+    uint8_t bytesPerSample = 0;
+    switch (format)
+    {
+    case PcmFormat::SINT16:
+        return 2;
+    case PcmFormat::FLOAT32:
+        return 4;
+    }
+    return 0;
+}
 }

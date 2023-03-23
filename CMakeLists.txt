@@ -146,41 +146,63 @@ add_executable(MediaEncoderTest
     ${LIB_TEST_DIR}/MediaEncoderTest.cpp
 )
 target_link_libraries(MediaEncoderTest MediaCore)
+add_custom_command(TARGET MediaEncoderTest POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    $<TARGET_FILE:MediaEncoderTest> $<TARGET_FILE_DIR:MediaCore>)
 
 add_executable(MediaOverviewTest
     ${LIB_TEST_DIR}/MediaOverviewTest.cpp
     ${IMGUI_SRC_PATH}/../${IMGUI_APP_ENTRY_SRC}
 )
 target_link_libraries(MediaOverviewTest MediaCore)
+add_custom_command(TARGET MediaOverviewTest POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    $<TARGET_FILE:MediaOverviewTest> $<TARGET_FILE_DIR:MediaCore>)
 
 add_executable(MediaReaderTest
     ${LIB_TEST_DIR}/MediaReaderTest.cpp
     ${IMGUI_SRC_PATH}/../${IMGUI_APP_ENTRY_SRC}
 )
 target_link_libraries(MediaReaderTest MediaCore)
+add_custom_command(TARGET MediaReaderTest POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    $<TARGET_FILE:MediaReaderTest> $<TARGET_FILE_DIR:MediaCore>)
 
 add_executable(MediaSnapshotTest
     ${LIB_TEST_DIR}/MediaSnapshotTest.cpp
     ${IMGUI_SRC_PATH}/../${IMGUI_APP_ENTRY_SRC}
 )
 target_link_libraries(MediaSnapshotTest MediaCore)
+add_custom_command(TARGET MediaSnapshotTest POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    $<TARGET_FILE:MediaSnapshotTest> $<TARGET_FILE_DIR:MediaCore>)
 
 add_executable(MultiTrackAudioTest
     ${LIB_TEST_DIR}/MultiTrackAudioReaderTest.cpp
     ${IMGUI_SRC_PATH}/../${IMGUI_APP_ENTRY_SRC}
 )
 target_link_libraries(MultiTrackAudioTest MediaCore)
+add_custom_command(TARGET MultiTrackAudioTest POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    $<TARGET_FILE:MultiTrackAudioTest> $<TARGET_FILE_DIR:MediaCore>)
 
 add_executable(MultiTrackVideoTest
     ${LIB_TEST_DIR}/MultiTrackVideoReaderTest.cpp
     ${IMGUI_SRC_PATH}/../${IMGUI_APP_ENTRY_SRC}
 )
 target_link_libraries(MultiTrackVideoTest MediaCore)
+add_custom_command(TARGET MultiTrackVideoTest POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    $<TARGET_FILE:MultiTrackVideoTest> $<TARGET_FILE_DIR:MediaCore>)
 
 add_executable(SubtitleReaderTest
     ${LIB_TEST_DIR}/SubtitleReaderTest.cpp
     ${IMGUI_SRC_PATH}/../${IMGUI_APP_ENTRY_SRC}
 )
 target_link_libraries(SubtitleReaderTest MediaCore)
+add_custom_command(TARGET SubtitleReaderTest POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    $<TARGET_FILE:SubtitleReaderTest> $<TARGET_FILE_DIR:MediaCore>)
+
 endif(BUILD_MEDIACORE_TEST)
 # <<<

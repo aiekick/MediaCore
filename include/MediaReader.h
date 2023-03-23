@@ -42,7 +42,7 @@ struct MediaReader
 
     virtual bool ReadVideoFrame(double pos, ImGui::ImMat& m, bool& eof, bool wait = true) = 0;
     virtual bool ReadAudioSamples(uint8_t* buf, uint32_t& size, double& pos, bool& eof, bool wait = true) = 0;
-    virtual bool ReadAudioSamples(ImGui::ImMat& m, uint32_t& numSamples, double& pos, bool& eof, bool wait = true) = 0;
+    virtual bool ReadAudioSamples(ImGui::ImMat& m, uint32_t readSamples, bool& eof, bool wait = true) = 0;
 
     virtual uint32_t Id() const = 0;
     virtual bool IsOpened() const = 0;

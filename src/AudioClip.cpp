@@ -17,8 +17,10 @@
 
 #include <sstream>
 #include "AudioClip.h"
+#include "Logger.h"
 
 using namespace std;
+using namespace Logger;
 
 static string GetFileNameFromPath(const string& path)
 {
@@ -193,7 +195,8 @@ namespace MediaCore
                 pos = 0;
             else if (pos > Duration())
                 pos = Duration()-1;
-            if (!m_srcReader->SeekTo((double)(pos+m_startOffset)/1000))
+            const double p = (double)(pos+m_startOffset)/1000;
+            if (!m_srcReader->SeekTo(p))
                 throw runtime_error(m_srcReader->GetError());
             m_readSamples = pos*m_srcReader->GetAudioOutSampleRate()/1000;
             m_eof = false;
@@ -218,25 +221,15 @@ namespace MediaCore
 
             if (readSamples > leftSamples)
                 readSamples = leftSamples;
-            uint32_t bufSize = readSamples*m_pcmFrameSize;
             int channels = m_srcReader->GetAudioOutChannels();
             ImGui::ImMat amat;
-            amat.create((int)readSamples, (int)1, channels, (size_t)(m_pcmFrameSize/channels));
-            if (!amat.data)
-                throw runtime_error("FAILED to allocate buffer for 'amat'!");
-
-            uint32_t readSize = bufSize;
-            double srcpos;
             bool srceof{false};
-            if (!m_srcReader->ReadAudioSamples((uint8_t*)amat.data, readSize, srcpos, srceof))
+            if (!m_srcReader->ReadAudioSamples(amat, readSamples, srceof))
                 throw runtime_error(m_srcReader->GetError());
-            if (readSize < bufSize)
-                memset((uint8_t*)amat.data+readSize, 0, bufSize-readSize);
+            double srcpos = amat.time_stamp;
             amat.time_stamp = (double)m_readSamples/sampleRate+(double)m_start/1000.;
-            amat.elempack = m_srcReader->IsPlanar() ? 1 : channels;
-            amat.rate.num = sampleRate;
-            amat.rate.den = 1;
-            amat.flags |= IM_MAT_FLAGS_AUDIO_FRAME;
+            readSamples = amat.w;
+            // Log(WARN) << "~~~ srcpos=" << srcpos << ", ts=" << amat.time_stamp << ", delta=" << (srcpos-amat.time_stamp) << endl;
             const bool isForward = m_srcReader->IsDirectionForward();
             if (isForward)
                 m_readSamples += readSamples;
