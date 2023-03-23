@@ -1955,9 +1955,9 @@ namespace FFUtils
         {
             result->decCtx = nullptr;
             if (!swResult.errMsg.empty())
-                result->errMsg = move(swResult.errMsg);
+                result->errMsg = std::move(swResult.errMsg);
             else if (!hwResult.errMsg.empty())
-                result->errMsg = move(hwResult.errMsg);
+                result->errMsg = std::move(hwResult.errMsg);
             else
                 result->errMsg = "No suitable decoder can be found!";
         }

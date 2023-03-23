@@ -2111,8 +2111,13 @@ private:
                 return false;
             }
             int64_t nextPts;
+#if (LIBAVUTIL_VERSION_MAJOR < 58)
             if (frm->pkt_duration > 0)
                 nextPts = frm->pts+frm->pkt_duration;
+#else
+            if (frm->duration > 0)
+                nextPts = frm->pts+frm->duration;
+#endif
             else
             {
                 int64_t pktDur = CvtMtsToPts((int64_t)((double)frm->nb_samples*1000/frm->sample_rate));
