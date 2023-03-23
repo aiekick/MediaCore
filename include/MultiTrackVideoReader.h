@@ -30,7 +30,7 @@ struct MultiTrackVideoReader
     virtual MultiTrackVideoReader* CloneAndConfigure(uint32_t outWidth, uint32_t outHeight, const MediaInfo::Ratio& frameRate) = 0;
     virtual bool Start() = 0;
     virtual void Close() = 0;
-    virtual MediaCore::VideoTrackHolder AddTrack(int64_t trackId, int64_t insertAfterId = INT64_MAX) = 0;
+    virtual MediaCore::VideoTrackHolder AddTrack(int64_t trackId, int64_t insertAfterId = -1) = 0;  // insertAfterId: -1, insert after the tail; -2, insert before the head
     virtual MediaCore::VideoTrackHolder RemoveTrackByIndex(uint32_t index) = 0;
     virtual MediaCore::VideoTrackHolder RemoveTrackById(int64_t trackId) = 0;
     virtual bool ChangeTrackViewOrder(int64_t targetId, int64_t insertAfterId) = 0;
@@ -53,11 +53,11 @@ struct MultiTrackVideoReader
     virtual MediaCore::VideoClipHolder GetClipById(int64_t clipId) = 0;
     virtual MediaCore::VideoOverlapHolder GetOverlapById(int64_t ovlpId) = 0;
 
-    virtual MediaCore::SubtitleTrackHolder BuildSubtitleTrackFromFile(int64_t id, const std::string& url, int64_t insertAfterId = INT64_MAX) = 0;
-    virtual MediaCore::SubtitleTrackHolder NewEmptySubtitleTrack(int64_t id, int64_t insertAfterId = INT64_MAX) = 0;
+    virtual MediaCore::SubtitleTrackHolder BuildSubtitleTrackFromFile(int64_t id, const std::string& url, int64_t insertAfterId = -1) = 0;
+    virtual MediaCore::SubtitleTrackHolder NewEmptySubtitleTrack(int64_t id, int64_t insertAfterId = -1) = 0;
     virtual MediaCore::SubtitleTrackHolder GetSubtitleTrackById(int64_t trackId) = 0;
     virtual MediaCore::SubtitleTrackHolder RemoveSubtitleTrackById(int64_t trackId) = 0;
-    virtual bool ChangeSubtitleTrackViewOrder(int64_t targetId, int64_t insertAfterId) = 0;
+    virtual bool ChangeSubtitleTrackViewOrder(int64_t targetId, int64_t insertAfterId = -1) = 0;
 
     virtual std::string GetError() const = 0;
 
