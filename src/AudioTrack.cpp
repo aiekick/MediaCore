@@ -99,6 +99,9 @@ public:
         m_duration = lastClip->Start()+lastClip->Duration();
         // update overlap
         UpdateClipOverlap(hClip);
+        // update read iterators
+        int64_t pos = (double)m_readSamples/m_outSampleRate;
+        UpdateReadIterator(pos);
     }
 
     void MoveClip(int64_t id, int64_t start) override
@@ -123,6 +126,9 @@ public:
         m_duration = lastClip->Start()+lastClip->Duration();
         // update overlap
         UpdateClipOverlap(hClip);
+        // update read iterators
+        int64_t pos = (double)m_readSamples/m_outSampleRate;
+        UpdateReadIterator(pos);
     }
 
     void ChangeClipRange(int64_t id, int64_t startOffset, int64_t endOffset) override
@@ -158,6 +164,9 @@ public:
         m_duration = lastClip->Start()+lastClip->Duration();
         // update overlap
         UpdateClipOverlap(hClip);
+        // update read iterators
+        int64_t pos = (double)m_readSamples/m_outSampleRate;
+        UpdateReadIterator(pos);
     }
 
     AudioClipHolder RemoveClipById(int64_t clipId) override
@@ -181,6 +190,10 @@ public:
             AudioClipHolder lastClip = m_clips.back();
             m_duration = lastClip->Start()+lastClip->Duration();
         }
+
+        // update read iterators
+        int64_t pos = (double)m_readSamples/m_outSampleRate;
+        UpdateReadIterator(pos);
         return hClip;
     }
 
@@ -208,6 +221,10 @@ public:
             AudioClipHolder lastClip = m_clips.back();
             m_duration = lastClip->Start()+lastClip->Duration();
         }
+
+        // update read iterators
+        int64_t pos = (double)m_readSamples/m_outSampleRate;
+        UpdateReadIterator(pos);
         return hClip;
     }
 
@@ -217,69 +234,9 @@ public:
         if (pos < 0)
             throw invalid_argument("Argument 'pos' can NOT be NEGATIVE!");
 
-        if (m_readForward)
-        {
-            // update read clip iterator
-            m_readClipIter = m_clips.end();
-            {
-                auto iter = m_clips.begin();
-                while (iter != m_clips.end())
-                {
-                    const AudioClipHolder& hClip = *iter;
-                    int64_t clipPos = pos-hClip->Start();
-                    hClip->SeekTo(clipPos);
-                    if (m_readClipIter == m_clips.end() && clipPos < hClip->Duration())
-                        m_readClipIter = iter;
-                    iter++;
-                }
-            }
-            // update read overlap iterator
-            m_readOverlapIter = m_overlaps.end();
-            {
-                auto iter = m_overlaps.begin();
-                while (iter != m_overlaps.end())
-                {
-                    const AudioOverlapHolder& hOverlap = *iter;
-                    int64_t overlapPos = pos-hOverlap->Start();
-                    if (m_readOverlapIter == m_overlaps.end() && overlapPos < hOverlap->Duration())
-                    {
-                        m_readOverlapIter = iter;
-                        break;
-                    }
-                    iter++;
-                }
-            }
-        }
-        else
-        {
-            m_readClipIter = m_clips.end();
-            {
-                auto riter = m_clips.rbegin();
-                while (riter != m_clips.rend())
-                {
-                    const AudioClipHolder& hClip = *riter;
-                    int64_t clipPos = pos-hClip->Start();
-                    hClip->SeekTo(clipPos);
-                    if (m_readClipIter == m_clips.end() && clipPos >= 0)
-                        m_readClipIter = riter.base();
-                    riter++;
-                }
-            }
-            m_readOverlapIter = m_overlaps.end();
-            {
-                auto riter = m_overlaps.rbegin();
-                while (riter != m_overlaps.rend())
-                {
-                    const AudioOverlapHolder& hOverlap = *riter;
-                    int64_t overlapPos = pos-hOverlap->Start();
-                    if (m_readOverlapIter == m_overlaps.end() && overlapPos >= 0)
-                        m_readOverlapIter = riter.base();
-                    riter++;
-                }
-            }
-        }
-
         m_readSamples = pos*m_outSampleRate/1000;
+        // update read iterators
+        UpdateReadIterator(pos);
     }
 
     AudioEffectFilterHolder GetAudioEffectFilter() override
@@ -826,6 +783,71 @@ private:
             while (readSamples < toReadSamples && m_readSamples > 0);
         }
         return readSamples;
+    }
+
+    void UpdateReadIterator(int64_t pos)
+    {
+        if (m_readForward)
+        {
+            // update read clip iterator
+            m_readClipIter = m_clips.end();
+            {
+                auto iter = m_clips.begin();
+                while (iter != m_clips.end())
+                {
+                    const AudioClipHolder& hClip = *iter;
+                    int64_t clipPos = pos-hClip->Start();
+                    hClip->SeekTo(clipPos);
+                    if (m_readClipIter == m_clips.end() && clipPos < hClip->Duration())
+                        m_readClipIter = iter;
+                    iter++;
+                }
+            }
+            // update read overlap iterator
+            m_readOverlapIter = m_overlaps.end();
+            {
+                auto iter = m_overlaps.begin();
+                while (iter != m_overlaps.end())
+                {
+                    const AudioOverlapHolder& hOverlap = *iter;
+                    int64_t overlapPos = pos-hOverlap->Start();
+                    if (m_readOverlapIter == m_overlaps.end() && overlapPos < hOverlap->Duration())
+                    {
+                        m_readOverlapIter = iter;
+                        break;
+                    }
+                    iter++;
+                }
+            }
+        }
+        else
+        {
+            m_readClipIter = m_clips.end();
+            {
+                auto riter = m_clips.rbegin();
+                while (riter != m_clips.rend())
+                {
+                    const AudioClipHolder& hClip = *riter;
+                    int64_t clipPos = pos-hClip->Start();
+                    hClip->SeekTo(clipPos);
+                    if (m_readClipIter == m_clips.end() && clipPos >= 0)
+                        m_readClipIter = riter.base();
+                    riter++;
+                }
+            }
+            m_readOverlapIter = m_overlaps.end();
+            {
+                auto riter = m_overlaps.rbegin();
+                while (riter != m_overlaps.rend())
+                {
+                    const AudioOverlapHolder& hOverlap = *riter;
+                    int64_t overlapPos = pos-hOverlap->Start();
+                    if (m_readOverlapIter == m_overlaps.end() && overlapPos >= 0)
+                        m_readOverlapIter = riter.base();
+                    riter++;
+                }
+            }
+        }
     }
 
     void CopyMatData(uint8_t** dstbuf, uint32_t dstOffset, ImGui::ImMat& srcmat)
