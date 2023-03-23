@@ -64,7 +64,7 @@ namespace MediaCore
             m_srcReader->EnableHwAccel(VideoClip::USE_HWACCEL);
             if (!m_srcReader->Open(hParser))
                 throw runtime_error(m_srcReader->GetError());
-            if (!m_srcReader->ConfigVideoReader(0u, 0u))
+            if (!m_srcReader->ConfigVideoReader(outWidth, outHeight))
                 throw runtime_error(m_srcReader->GetError());
             if (frameRate.num <= 0 || frameRate.den <= 0)
                 throw invalid_argument("Invalid argument value for 'frameRate'!");
