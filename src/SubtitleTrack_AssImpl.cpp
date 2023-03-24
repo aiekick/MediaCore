@@ -531,6 +531,62 @@ bool SubtitleTrack_AssImpl::_SetOffsetV(int value, bool clearCache)
     return true;
 }
 
+bool SubtitleTrack_AssImpl::SetOffsetH(float value)
+{
+    return _SetOffsetH(value);
+}
+
+bool SubtitleTrack_AssImpl::_SetOffsetH(float value, bool clearCache)
+{
+    if (m_overrideStyle.OffsetHScale() == value)
+        return true;
+    m_logger->Log(DEBUG) << "Set offsetHScale '" << value << "'" << endl;
+    auto bias = value-m_overrideStyle.OffsetHScale();
+    m_overrideStyle.SetOffsetH(value);
+    if (clearCache)
+    {
+        if (m_outputFullSize)
+            ClearRenderCache();
+        else
+        {
+            for (auto& clip : m_clips)
+            {
+                SubtitleClip_AssImpl* assClip = dynamic_cast<SubtitleClip_AssImpl*>(clip.get());
+                assClip->UpdateImageAreaX(bias);
+            }
+        }
+    }
+    return true;
+}
+
+bool SubtitleTrack_AssImpl::SetOffsetV(float value)
+{
+    return _SetOffsetV(value);
+}
+
+bool SubtitleTrack_AssImpl::_SetOffsetV(float value, bool clearCache)
+{
+    if (m_overrideStyle.OffsetVScale() == value)
+        return true;
+    m_logger->Log(DEBUG) << "Set offsetVScale '" << value << "'" << endl;
+    auto bias = value-m_overrideStyle.OffsetVScale();
+    m_overrideStyle.SetOffsetV(value);
+    if (clearCache)
+    {
+        if (m_outputFullSize)
+            ClearRenderCache();
+        else
+        {
+            for (auto& clip : m_clips)
+            {
+                SubtitleClip_AssImpl* assClip = dynamic_cast<SubtitleClip_AssImpl*>(clip.get());
+                assClip->UpdateImageAreaY(bias);
+            }
+        }
+    }
+    return true;
+}
+
 bool SubtitleTrack_AssImpl::SetOffsetCompensationV(int32_t value)
 {
     if (m_offsetCompensationV == value)
@@ -1221,6 +1277,8 @@ SubtitleTrackHolder SubtitleTrack_AssImpl::Clone(uint32_t frmW, uint32_t frmH)
     newTrk->SetBackgroundColor(trkStyle.BackgroundColor());
     newTrk->SetOffsetH((int)(trkStyle.OffsetH()*wRatio));
     newTrk->SetOffsetV((int)(trkStyle.OffsetV()*hRatio));
+    newTrk->SetOffsetH(trkStyle.OffsetHScale());
+    newTrk->SetOffsetV(trkStyle.OffsetVScale());
 
     for (auto c : m_clips)
     {
@@ -1615,11 +1673,14 @@ SubtitleImage SubtitleTrack_AssImpl::RenderSubtitleClip(SubtitleClip* clip, int6
     vmat.color_format = IM_CF_ABGR;
 
     // calculate the final display box
+    // TODO::Dicky using float
     SubtitleImage::Rect dispBox{assBox};
-    const int32_t offsetH = clip->IsUsingTrackStyle() ? m_overrideStyle.OffsetH() : clip->OffsetH();
-    const int32_t offsetV = clip->IsUsingTrackStyle() ? m_overrideStyle.OffsetV() : clip->OffsetV();
-    dispBox.x += offsetH;
-    dispBox.y += offsetV+m_offsetCompensationV;
+    //const int32_t offsetH = clip->IsUsingTrackStyle() ? m_overrideStyle.OffsetH() : clip->OffsetH();
+    //const int32_t offsetV = clip->IsUsingTrackStyle() ? m_overrideStyle.OffsetV() : clip->OffsetV();
+    const float offsetH = clip->IsUsingTrackStyle() ? m_overrideStyle.OffsetHScale() : clip->OffsetHScale();
+    const float offsetV = clip->IsUsingTrackStyle() ? m_overrideStyle.OffsetVScale() : clip->OffsetVScale();
+    dispBox.x += offsetH * m_frmW;
+    dispBox.y += offsetV * m_frmH + m_offsetCompensationV;
     m_logger->Log(DEBUG) << "--> assBox:{ " << assBox.x << ", " << assBox.y << ", " << assBox.w << ", " << assBox.h
             << " }, offsetH/V=( " << offsetH << ", " << offsetV << ")." << endl;
 
@@ -1660,8 +1721,8 @@ SubtitleImage SubtitleTrack_AssImpl::RenderSubtitleClip(SubtitleClip* clip, int6
         unsigned char* assPtr;
         if (m_outputFullSize)
         {
-            drawBox.x += offsetH;
-            drawBox.y += offsetV;
+            drawBox.x += offsetH * m_frmW;
+            drawBox.y += offsetV * m_frmH;
             if (drawBox.x+drawBox.w <= 0 || drawBox.y+dispBox.h <= 0 ||
                 drawBox.x >= m_frmW || drawBox.y >= m_frmH)
             {

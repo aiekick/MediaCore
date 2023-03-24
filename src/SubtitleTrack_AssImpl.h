@@ -48,6 +48,8 @@ namespace MediaCore
         int Alignment() const override { return m_alignment; }
         int OffsetH() const override { return m_offsetH; }
         int OffsetV() const override { return m_offsetV; }
+        float OffsetHScale() const override { return m_foffsetH; }
+        float OffsetVScale() const override { return m_foffsetV; }
         int Bold() const override { return m_bold; }
         int Italic() const override { return m_italic; }
         bool UnderLine() const override { return m_assStyle.Underline != 0; }
@@ -72,6 +74,8 @@ namespace MediaCore
         void SetAlignment(int value);
         void SetOffsetH(int value) { m_offsetH = value; }
         void SetOffsetV(int value) { m_offsetV = value; }
+        void SetOffsetH(float value) { m_foffsetH = value; }
+        void SetOffsetV(float value) { m_foffsetV = value; }
         void SetBold(int value);
         void SetItalic(int value);
         void SetUnderLine(bool enable) { m_assStyle.Underline = enable ? 1 : 0; }
@@ -89,6 +93,8 @@ namespace MediaCore
         std::unique_ptr<char[]> m_fontName;
         int32_t m_offsetH{0};
         int32_t m_offsetV{0};
+        float m_foffsetH{0};
+        float m_foffsetV{0};
         SubtitleColor m_primaryColor;
         SubtitleColor m_secondaryColor;
         SubtitleColor m_outlineColor;
@@ -131,6 +137,8 @@ namespace MediaCore
         bool SetAlignment(int value) override;
         bool SetOffsetH(int value) override;
         bool SetOffsetV(int value) override;
+        bool SetOffsetH(float value) override;
+        bool SetOffsetV(float value) override;
         bool SetOffsetCompensationV(int32_t value) override;
         int32_t GetOffsetCompensationV() const override { return m_offsetCompensationV; }
         bool SetItalic(int value) override;
@@ -185,6 +193,8 @@ namespace MediaCore
         bool _SetShadowDepth(double value, bool clearCache = true);
         bool _SetOffsetH(int value, bool clearCache = true);
         bool _SetOffsetV(int value, bool clearCache = true);
+        bool _SetOffsetH(float value, bool clearCache = true);
+        bool _SetOffsetV(float value, bool clearCache = true);
         bool ReadFile(const std::string& path);
         void ReleaseFFContext();
         SubtitleImage RenderSubtitleClip(SubtitleClip* clip, int64_t timeOffset);
