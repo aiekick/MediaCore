@@ -1037,7 +1037,8 @@ private:
                 m_viddecCtx = res.decCtx;
                 AVHWDeviceType hwDevType = res.hwDevType;
                 m_logger->Log(INFO) << "Opened video decoder '" << 
-                    m_viddecCtx->codec->name << "'(" << (hwDevType==AV_HWDEVICE_TYPE_NONE ? "SW" : av_hwdevice_get_type_name(hwDevType)) << ")." << endl;
+                    m_viddecCtx->codec->name << "'(" << (hwDevType==AV_HWDEVICE_TYPE_NONE ? "SW" : av_hwdevice_get_type_name(hwDevType)) << ")"
+                    << " for media '" << m_hParser->GetUrl() << "'." << endl;
             }
             else
             {

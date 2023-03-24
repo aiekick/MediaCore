@@ -576,6 +576,19 @@ public:
         return true;
     }
 
+    void UpdateDuration() override
+    {
+        lock_guard<recursive_mutex> lk(m_trackLock);
+        int64_t dur = 0;
+        for (auto& track : m_tracks)
+        {
+            const int64_t trackDur = track->Duration();
+            if (trackDur > dur)
+                dur = trackDur;
+        }
+        m_duration = dur;
+    }
+
     bool Refresh() override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
@@ -585,10 +598,7 @@ public:
             return false;
         }
 
-        {
-            lock_guard<recursive_mutex> lk2(m_trackLock);
-            UpdateDuration();
-        }
+        UpdateDuration();
 
         SeekTo(ReadPos(), false);
         return true;
@@ -831,18 +841,6 @@ public:
     }
 
 private:
-    void UpdateDuration()
-    {
-        int64_t dur = 0;
-        for (auto& track : m_tracks)
-        {
-            const int64_t trackDur = track->Duration();
-            if (trackDur > dur)
-                dur = trackDur;
-        }
-        m_duration = dur;
-    }
-
     void StartMixingThread()
     {
         m_quit = false;

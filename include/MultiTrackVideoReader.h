@@ -40,6 +40,7 @@ struct MultiTrackVideoReader
     virtual bool ReadVideoFrame(int64_t pos, ImGui::ImMat& vmat, bool nonblocking = false) = 0;
     virtual bool ReadNextVideoFrameEx(std::vector<MediaCore::CorrelativeFrame>& frames) = 0;
     virtual bool ReadNextVideoFrame(ImGui::ImMat& vmat) = 0;
+    virtual void UpdateDuration() = 0;
     virtual bool Refresh() = 0;
 
     virtual int64_t Duration() const = 0;
