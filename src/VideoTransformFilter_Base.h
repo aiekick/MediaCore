@@ -212,6 +212,109 @@ namespace MediaCore
             return true;
         }
 
+        // new API
+        bool SetPositionOffset(float offsetH, float offsetV) override
+        {
+            std::lock_guard<std::recursive_mutex> lk(m_processLock);
+            if (m_fposOffsetH == offsetH && m_fposOffsetV == offsetV)
+                return true;
+            m_fposOffsetH = offsetH;
+            m_fposOffsetV = offsetV;
+            m_needUpdatePositionParamScale = true;
+            return true;
+        }
+
+        bool SetPositionOffsetH(float value) override
+        {
+            std::lock_guard<std::recursive_mutex> lk(m_processLock);
+            if (m_fposOffsetH == value)
+                return true;
+            m_fposOffsetH = value;
+            m_needUpdatePositionParamScale = true;
+            return true;
+        }
+
+        bool SetPositionOffsetV(float value) override
+        {
+            std::lock_guard<std::recursive_mutex> lk(m_processLock);
+            if (m_fposOffsetV == value)
+                return true;
+            m_fposOffsetV = value;
+            m_needUpdatePositionParamScale = true;
+            return true;
+        }
+
+        bool SetCropMargin(float left, float top, float right, float bottom) override
+        {
+            std::lock_guard<std::recursive_mutex> lk(m_processLock);
+            if (m_fcropL == left && m_fcropT == top && m_fcropR == right && m_fcropB == bottom)
+                return true;
+            m_fcropL = left;
+            m_fcropT = top;
+            m_fcropR = right;
+            m_fcropB = bottom;
+            m_needUpdateCropParamScale = true;
+            return true;
+        }
+
+        bool SetCropMarginL(float value) override
+        {
+            std::lock_guard<std::recursive_mutex> lk(m_processLock);
+            if (m_fcropL == value)
+                return true;
+            m_fcropL = value;
+            m_needUpdateCropParamScale = true;
+            return true;
+        }
+
+        bool SetCropMarginT(float value) override
+        {
+            std::lock_guard<std::recursive_mutex> lk(m_processLock);
+            if (m_fcropT == value)
+                return true;
+            m_fcropT = value;
+            m_needUpdateCropParamScale = true;
+            return true;
+        }
+
+        bool SetCropMarginR(float value) override
+        {
+            std::lock_guard<std::recursive_mutex> lk(m_processLock);
+            if (m_fcropR == value)
+                return true;
+            m_fcropR = value;
+            m_needUpdateCropParamScale = true;
+            return true;
+        }
+
+        bool SetCropMarginB(float value) override
+        {
+            std::lock_guard<std::recursive_mutex> lk(m_processLock);
+            if (m_fcropB == value)
+                return true;
+            m_fcropB = value;
+            m_needUpdateCropParamScale = true;
+            return true;
+        }
+
+        float GetPositionOffsetHScale() const override
+        { return m_fposOffsetH; }
+
+        float GetPositionOffsetVScale() const override
+        { return m_fposOffsetV; }
+
+        float GetCropMarginLScale() const override
+        { return m_fcropL; }
+
+        float GetCropMarginTScale() const override
+        { return m_fcropT; }
+
+        float GetCropMarginRScale() const override
+        { return m_fcropR; }
+
+        float GetCropMarginBScale() const override
+        { return m_fcropB; }
+
         std::string GetError() const override
         { return m_errMsg; }
 
@@ -230,7 +333,11 @@ namespace MediaCore
         bool m_needUpdateScaleParam{true};
         bool m_needUpdatePositionParam{false};
         bool m_needUpdateCropParam{false};
+        bool m_needUpdateCropParamScale{false};
+        bool m_needUpdatePositionParamScale{false};
         bool m_needUpdateRotateParam{false};
+        float m_fcropL{0}, m_fcropR{0}, m_fcropT{0}, m_fcropB{0};
+        float m_fposOffsetH{0}, m_fposOffsetV{0};
         std::string m_errMsg;
     };
 }

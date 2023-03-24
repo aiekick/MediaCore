@@ -33,6 +33,11 @@ namespace MediaCore
         bool SetPositionOffset(int32_t offsetH, int32_t offsetV) override;
         bool SetPositionOffsetH(int32_t value) override;
         bool SetPositionOffsetV(int32_t value) override;
+        // new API
+        bool SetPositionOffset(float offsetH, float offsetV) override;
+        bool SetPositionOffsetH(float value) override;
+        bool SetPositionOffsetV(float value) override;
+        //
         ImGui::ImMat FilterImage(const ImGui::ImMat& vmat, int64_t pos) override;
 
     private:

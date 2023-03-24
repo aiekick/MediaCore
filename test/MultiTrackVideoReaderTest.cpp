@@ -289,34 +289,34 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
         }
         ImGui::BeginDisabled(!fftransFilter);
         int sldintMaxValue = selectedClip ? selectedClip->SrcWidth() : 0;
-        int sldintValue = fftransFilter ? fftransFilter->GetCropMarginL() : 0;
-        if (ImGui::SliderInt("CropL", &sldintValue, 0, sldintMaxValue))
+        uint32_t slduintValue = fftransFilter ? fftransFilter->GetCropMarginL() : 0;
+        if (ImGui::SliderInt("CropL", (int*)&slduintValue, 0, sldintMaxValue))
         {
-            fftransFilter->SetCropMarginL(sldintValue);
+            fftransFilter->SetCropMarginL(slduintValue);
             g_mtVidReader->Refresh();
         }
         ImGui::SameLine(0, 10);
         sldintMaxValue = selectedClip ? selectedClip->SrcHeight() : 0;
-        sldintValue = fftransFilter ? fftransFilter->GetCropMarginT() : 0;
-        if (ImGui::SliderInt("CropT", &sldintValue, 0, sldintMaxValue))
+        slduintValue = fftransFilter ? fftransFilter->GetCropMarginT() : 0;
+        if (ImGui::SliderInt("CropT", (int*)&slduintValue, 0, sldintMaxValue))
         {
-            fftransFilter->SetCropMarginT(sldintValue);
+            fftransFilter->SetCropMarginT(slduintValue);
             g_mtVidReader->Refresh();
         }
         ImGui::SameLine(0, 10);
         sldintMaxValue = selectedClip ? selectedClip->SrcWidth() : 0;
-        sldintValue = fftransFilter ? fftransFilter->GetCropMarginR() : 0;
-        if (ImGui::SliderInt("CropR", &sldintValue, 0, sldintMaxValue))
+        slduintValue = fftransFilter ? fftransFilter->GetCropMarginR() : 0;
+        if (ImGui::SliderInt("CropR", (int*)&slduintValue, 0, sldintMaxValue))
         {
-            fftransFilter->SetCropMarginR(sldintValue);
+            fftransFilter->SetCropMarginR(slduintValue);
             g_mtVidReader->Refresh();
         }
         ImGui::SameLine(0, 10);
         sldintMaxValue = selectedClip ? selectedClip->SrcHeight() : 0;
-        sldintValue = fftransFilter ? fftransFilter->GetCropMarginB() : 0;
-        if (ImGui::SliderInt("CropB", &sldintValue, 0, sldintMaxValue))
+        slduintValue = fftransFilter ? fftransFilter->GetCropMarginB() : 0;
+        if (ImGui::SliderInt("CropB", (int*)&slduintValue, 0, sldintMaxValue))
         {
-            fftransFilter->SetCropMarginB(sldintValue);
+            fftransFilter->SetCropMarginB(slduintValue);
             g_mtVidReader->Refresh();
         }
         ImGui::EndDisabled();
@@ -331,8 +331,8 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
         }
         ImGui::SameLine(0, 20);
         sldintMaxValue = selectedClip ? selectedClip->OutWidth() : 0;
-        sldintValue = fftransFilter ? fftransFilter->GetPositionOffsetH() : 0;
-        if (ImGui::SliderInt("OffsetH", &sldintValue, -sldintMaxValue, sldintMaxValue))
+        int32_t sldintValue = fftransFilter ? fftransFilter->GetPositionOffsetH() : 0;
+        if (ImGui::SliderInt("OffsetH", (int*)&sldintValue, -sldintMaxValue, sldintMaxValue))
         {
             fftransFilter->SetPositionOffsetH(sldintValue);
             g_mtVidReader->Refresh();
@@ -340,7 +340,7 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
         ImGui::SameLine(0, 10);
         sldintMaxValue = selectedClip ? selectedClip->OutHeight() : 0;
         sldintValue = fftransFilter ? fftransFilter->GetPositionOffsetV() : 0;
-        if (ImGui::SliderInt("OffsetV", &sldintValue, -sldintMaxValue, sldintMaxValue))
+        if (ImGui::SliderInt("OffsetV", (int*)&sldintValue, -sldintMaxValue, sldintMaxValue))
         {
             fftransFilter->SetPositionOffsetV(sldintValue);
             g_mtVidReader->Refresh();

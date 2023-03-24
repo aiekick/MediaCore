@@ -155,6 +155,15 @@ namespace MediaCore
             m_realScaleRatioH = (double)fitScaleWidth/m_inWidth*m_scaleRatioH;
             m_realScaleRatioV = (double)fitScaleHeight/m_inHeight*m_scaleRatioV;
         }
+
+        if (m_needUpdatePositionParamScale)
+        {
+            m_posOffsetH = m_fposOffsetH * m_outWidth;
+            m_posOffsetV = m_fposOffsetV * m_outHeight;
+            m_needUpdatePositionParamScale = false;
+            m_needUpdatePositionParam = true;
+        }
+        
         if (m_needUpdateScaleParam || m_needUpdateRotateParam || m_needUpdatePositionParam)
         {
             float _x_scale = 1.f / (m_realScaleRatioH + FLT_EPSILON);
@@ -183,6 +192,17 @@ namespace MediaCore
             m_needUpdateScaleParam = m_needUpdateRotateParam = m_needUpdatePositionParam = false;
             UpdatePassThrough();
         }
+
+        if (m_needUpdateCropParamScale)
+        {
+            m_cropL = m_inWidth * m_fcropL;
+            m_cropR = m_inWidth * m_fcropR;
+            m_cropT = m_inHeight * m_fcropT;
+            m_cropB = m_inHeight * m_fcropB;
+            m_needUpdateCropParamScale = false;
+            m_needUpdateCropParam = true;
+        }
+
         if (m_needUpdateCropParam)
         {
             float _l = (float)m_cropL;
