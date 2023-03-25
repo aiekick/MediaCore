@@ -607,6 +607,26 @@ bool SubtitleTrack_AssImpl::SetOffsetCompensationV(int32_t value)
     return true;
 }
 
+bool SubtitleTrack_AssImpl::SetOffsetCompensationV(float value)
+{
+    if (m_foffsetCompensationV == value)
+        return true;
+    m_logger->Log(DEBUG) << "Set offsetCompensationV Scale'" << value << "'" << endl;
+    auto bias = value-m_foffsetCompensationV;
+    m_foffsetCompensationV = value;
+    if (m_outputFullSize)
+        ClearRenderCache();
+    else
+    {
+        for (auto& clip : m_clips)
+        {
+            SubtitleClip_AssImpl* assClip = dynamic_cast<SubtitleClip_AssImpl*>(clip.get());
+            assClip->UpdateImageAreaY(bias);
+        }
+    }
+    return true;
+}
+
 bool SubtitleTrack_AssImpl::SetItalic(int value)
 {
     if (m_overrideStyle.Italic() == value)
@@ -1039,7 +1059,7 @@ SubtitleClipHolder SubtitleTrack_AssImpl::NewClip(int64_t startTime, int64_t dur
         }
     }
 
-    SubtitleClip_AssImpl* newAssClip = new SubtitleClip_AssImpl(assEvent, m_asstrk, bind(&SubtitleTrack_AssImpl::RenderSubtitleClip, this, _1, _2));
+    SubtitleClip_AssImpl* newAssClip = new SubtitleClip_AssImpl(assEvent, m_asstrk, bind(&SubtitleTrack_AssImpl::RenderSubtitleClip, this, _1, _2, std::placeholders::_3, std::placeholders::_4));
     SubtitleClipHolder hNewClip(newAssClip);
     m_clips.insert(iter, hNewClip);
 
@@ -1565,7 +1585,7 @@ bool SubtitleTrack_AssImpl::ReadFile(const string& path)
         {
             ASS_Event* e = m_asstrk->events+i;
             e->ReadOrder = i;
-            SubtitleClip_AssImpl* assClip = new SubtitleClip_AssImpl(e, m_asstrk, bind(&SubtitleTrack_AssImpl::RenderSubtitleClip, this, _1, _2));
+            SubtitleClip_AssImpl* assClip = new SubtitleClip_AssImpl(e, m_asstrk, bind(&SubtitleTrack_AssImpl::RenderSubtitleClip, this, _1, _2, std::placeholders::_3, std::placeholders::_4));
             SubtitleClipHolder hSubClip(assClip);
             m_clips.push_back(hSubClip);
             if (assClip->EndTime() > m_duration)
@@ -1622,7 +1642,7 @@ private:
     void* m_buf;
 };
 
-SubtitleImage SubtitleTrack_AssImpl::RenderSubtitleClip(SubtitleClip* clip, int64_t timeOffset)
+SubtitleImage SubtitleTrack_AssImpl::RenderSubtitleClip(SubtitleClip* clip, int64_t timeOffset, bool absolutePosX, bool absolutePosY)
 {
     int64_t pos = clip->StartTime()+timeOffset;
     UpdateTrackStyleByKeyPoints(pos);
@@ -1673,14 +1693,21 @@ SubtitleImage SubtitleTrack_AssImpl::RenderSubtitleClip(SubtitleClip* clip, int6
     vmat.color_format = IM_CF_ABGR;
 
     // calculate the final display box
-    // TODO::Dicky using float
     SubtitleImage::Rect dispBox{assBox};
     //const int32_t offsetH = clip->IsUsingTrackStyle() ? m_overrideStyle.OffsetH() : clip->OffsetH();
     //const int32_t offsetV = clip->IsUsingTrackStyle() ? m_overrideStyle.OffsetV() : clip->OffsetV();
     const float offsetH = clip->IsUsingTrackStyle() ? m_overrideStyle.OffsetHScale() : clip->OffsetHScale();
     const float offsetV = clip->IsUsingTrackStyle() ? m_overrideStyle.OffsetVScale() : clip->OffsetVScale();
-    dispBox.x += offsetH * m_frmW;
-    dispBox.y += offsetV * m_frmH + m_offsetCompensationV;
+    if (absolutePosX)
+        dispBox.x = offsetH * m_frmW;
+    else
+        dispBox.x += offsetH * m_frmW;
+    
+    if (absolutePosY)
+        dispBox.y = offsetV * m_frmH;
+    else
+        dispBox.y += offsetV * m_frmH + m_foffsetCompensationV * m_frmH;
+
     m_logger->Log(DEBUG) << "--> assBox:{ " << assBox.x << ", " << assBox.y << ", " << assBox.w << ", " << assBox.h
             << " }, offsetH/V=( " << offsetH << ", " << offsetV << ")." << endl;
 

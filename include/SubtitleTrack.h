@@ -54,6 +54,7 @@ namespace MediaCore
         virtual bool SetOffsetH(float value) = 0;
         virtual bool SetOffsetV(float value) = 0;
         virtual bool SetOffsetCompensationV(int32_t value) = 0;
+        virtual bool SetOffsetCompensationV(float value) = 0;
         virtual int32_t GetOffsetCompensationV() const = 0;
         virtual bool SetItalic(int value) = 0;
         virtual bool SetBold(int value) = 0;

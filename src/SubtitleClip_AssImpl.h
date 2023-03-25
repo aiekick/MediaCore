@@ -23,7 +23,7 @@
 namespace MediaCore
 {
     class SubtitleClip_AssImpl;
-    using AssRenderCallback = std::function<SubtitleImage(SubtitleClip_AssImpl*, int64_t)>;
+    using AssRenderCallback = std::function<SubtitleImage(SubtitleClip_AssImpl*, int64_t, bool, bool)>;
 
     class SubtitleClip_AssImpl : public SubtitleClip
     {

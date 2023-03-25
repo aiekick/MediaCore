@@ -140,6 +140,7 @@ namespace MediaCore
         bool SetOffsetH(float value) override;
         bool SetOffsetV(float value) override;
         bool SetOffsetCompensationV(int32_t value) override;
+        bool SetOffsetCompensationV(float value) override;
         int32_t GetOffsetCompensationV() const override { return m_offsetCompensationV; }
         bool SetItalic(int value) override;
         bool SetBold(int value) override;
@@ -197,7 +198,7 @@ namespace MediaCore
         bool _SetOffsetV(float value, bool clearCache = true);
         bool ReadFile(const std::string& path);
         void ReleaseFFContext();
-        SubtitleImage RenderSubtitleClip(SubtitleClip* clip, int64_t timeOffset);
+        SubtitleImage RenderSubtitleClip(SubtitleClip* clip, int64_t timeOffset, bool absolutePosX, bool absolutePosY);
         void ClearRenderCache();
         void ToggleOverrideStyle();
         void UpdateTrackStyleByKeyPoints(int64_t pos);
@@ -216,6 +217,7 @@ namespace MediaCore
         ASS_Renderer* m_assrnd{nullptr};
         uint32_t m_frmW{0}, m_frmH{0};
         int32_t m_offsetCompensationV{0};
+        float m_foffsetCompensationV{0};
         bool m_outputFullSize{true};
         bool m_useOverrideStyle{false};
         SubtitleTrackStyle_AssImpl m_overrideStyle;
