@@ -601,6 +601,7 @@ void SubtitleClip_AssImpl::CloneStyle(SubtitleClipHolder from, double wRatio, do
     SetOffsetH(from->OffsetHScale());
     SetOffsetV(from->OffsetVScale());
     SetAlignment(from->Alignment());
+    SetKeyPoints(*(from->GetKeyPoints()));
 }
 
 void SubtitleClip_AssImpl::InvalidateImage()

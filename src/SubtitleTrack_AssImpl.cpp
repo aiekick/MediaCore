@@ -1305,6 +1305,7 @@ SubtitleTrackHolder SubtitleTrack_AssImpl::Clone(uint32_t frmW, uint32_t frmH, b
     newTrk->SetOffsetV((int)(trkStyle.OffsetV()*hRatio));
     newTrk->SetOffsetH(trkStyle.OffsetHScale());
     newTrk->SetOffsetV(trkStyle.OffsetVScale());
+    newTrk->SetKeyPoints(*(m_overrideStyle.GetKeyPoints()));
 
     for (auto c : m_clips)
     {
