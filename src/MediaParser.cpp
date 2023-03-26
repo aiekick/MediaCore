@@ -317,7 +317,7 @@ private:
 
     bool ParseGeneralMediaInfo(TaskHolder hTask)
     {
-        int fferr;
+        int fferr = 0;
         fferr = av_opt_set_int(m_avfmtCtx, "probesize", 5000, 0);
         if (fferr < 0)
             m_logger->Log(Error) << "FAILED to set option 'probesize' to m_avfmtCtx! fferr=" << fferr << "." << endl;

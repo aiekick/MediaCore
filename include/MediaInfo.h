@@ -88,4 +88,7 @@ namespace MediaInfo
     };
 
     using InfoHolder = std::shared_ptr<Info>;
+
+    inline bool IsRatioValid(const Ratio& r)
+    { return r.num != 0 && r.den != 0; }
 }

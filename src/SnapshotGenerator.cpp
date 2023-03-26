@@ -556,11 +556,17 @@ private:
         m_vidStartMts = (int64_t)(vidStream->startTime*1000);
         m_vidDurMts = (int64_t)(vidStream->duration*1000);
         m_vidFrmCnt = vidStream->frameNum;
-        AVRational avgFrmRate = { vidStream->avgFrameRate.num, vidStream->avgFrameRate.den };
         AVRational timebase = { vidStream->timebase.num, vidStream->timebase.den };
-        m_vidfrmIntvMts = av_q2d(av_inv_q(avgFrmRate))*1000.;
+        AVRational frameRate;
+        if (MediaInfo::IsRatioValid(vidStream->avgFrameRate))
+            frameRate = { vidStream->avgFrameRate.num, vidStream->avgFrameRate.den };
+        else if (MediaInfo::IsRatioValid(vidStream->realFrameRate))
+            frameRate = { vidStream->realFrameRate.num, vidStream->realFrameRate.den };
+        else
+            frameRate = av_inv_q(timebase);
+        m_vidfrmIntvMts = av_q2d(av_inv_q(frameRate))*1000.;
         m_vidfrmIntvMtsHalf = ceil(m_vidfrmIntvMts)/2;
-        m_vidfrmIntvPts = av_rescale_q(1, av_inv_q(avgFrmRate), timebase);
+        m_vidfrmIntvPts = av_rescale_q(1, av_inv_q(frameRate), timebase);
         m_vidfrmIntvPtsHalf = m_vidfrmIntvPts/2;
 
         if (m_useRszFactor)
