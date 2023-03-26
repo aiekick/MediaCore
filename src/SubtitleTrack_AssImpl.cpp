@@ -1273,7 +1273,8 @@ bool SubtitleTrack_AssImpl::SaveAs(const string& assFilePath)
 
 SubtitleTrackHolder SubtitleTrack_AssImpl::Clone(uint32_t frmW, uint32_t frmH)
 {
-    SubtitleTrack_AssImpl* newTrk = new SubtitleTrack_AssImpl(m_id);
+    SubtitleTrackHolder hSubTrk = NewEmptyTrack(m_id);
+    SubtitleTrack_AssImpl* newTrk = dynamic_cast<SubtitleTrack_AssImpl*>(hSubTrk.get());
     newTrk->SetFrameSize(frmW, frmH);
     newTrk->EnableFullSizeOutput(false);
     const double wRatio = (double)frmW/m_frmW;
@@ -1307,7 +1308,7 @@ SubtitleTrackHolder SubtitleTrack_AssImpl::Clone(uint32_t frmW, uint32_t frmH)
         if (!c->IsUsingTrackStyle())
             c2->CloneStyle(c);
     }
-    return SubtitleTrackHolder(newTrk);
+    return hSubTrk;
 }
 
 ASS_Library* SubtitleTrack_AssImpl::s_asslib = nullptr;
