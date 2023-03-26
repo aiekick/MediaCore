@@ -23,7 +23,7 @@
 namespace MediaCore
 {
     class SubtitleClip_AssImpl;
-    using AssRenderCallback = std::function<SubtitleImage(SubtitleClip_AssImpl*, int64_t)>;
+    using AssRenderCallback = std::function<SubtitleImage(SubtitleClip_AssImpl*, int64_t, bool, bool)>;
 
     class SubtitleClip_AssImpl : public SubtitleClip
     {
@@ -59,6 +59,8 @@ namespace MediaCore
         double RotationZ() const override { return m_rotationZ; }
         int32_t OffsetH() const override { return m_offsetH; }
         int32_t OffsetV() const override { return m_offsetV; }
+        float OffsetHScale() const override { return m_foffsetH; }
+        float OffsetVScale() const override { return m_foffsetV; }
         uint32_t Alignment() const override { return m_alignment; }
         ImGui::KeyPointEditor* GetKeyPoints() override { return &m_keyPoints; }
         int64_t StartTime() const override { return m_assEvent ? m_assEvent->Start : -1; }
@@ -97,6 +99,8 @@ namespace MediaCore
         void SetRotationZ(double value) override;
         void SetOffsetH(int32_t value) override;
         void SetOffsetV(int32_t value) override;
+        void SetOffsetH(float value) override;
+        void SetOffsetV(float value) override;
         void SetAlignment(uint32_t value) override;
         void SetKeyPoints(const ImGui::KeyPointEditor& keyPoints) override;
         void SetText(const std::string& text) override;
@@ -130,6 +134,8 @@ namespace MediaCore
         void _SetRotationZ(double value, bool clearCache = true);
         void _SetOffsetH(int value, bool clearCache = true);
         void _SetOffsetV(int value, bool clearCache = true);
+        void _SetOffsetH(float value, bool clearCache = true);
+        void _SetOffsetV(float value, bool clearCache = true);
 
     private:
         SubtitleType m_type;
@@ -157,6 +163,8 @@ namespace MediaCore
         double m_rotationZ{0};
         int32_t m_offsetH{0};
         int32_t m_offsetV{0};
+        float m_foffsetH{0};
+        float m_foffsetV{0};
         uint32_t m_alignment{2};
         ImGui::KeyPointEditor m_keyPoints;
         std::string m_text;

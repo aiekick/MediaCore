@@ -699,6 +699,7 @@ public:
         newSubTrack->SetFrameSize(m_outWidth, m_outHeight);
         newSubTrack->SetAlignment(5);
         newSubTrack->SetOffsetCompensationV((int32_t)((double)m_outHeight*0.43));
+        newSubTrack->SetOffsetCompensationV(0.43f);
         newSubTrack->EnableFullSizeOutput(false);
         lock_guard<mutex> lk(m_subtrkLock);
         if (insertAfterId == -1)
@@ -733,6 +734,7 @@ public:
         newSubTrack->SetFrameSize(m_outWidth, m_outHeight);
         newSubTrack->SetAlignment(5);
         newSubTrack->SetOffsetCompensationV((int32_t)((double)m_outHeight*0.43));
+        newSubTrack->SetOffsetCompensationV(0.43f);
         newSubTrack->EnableFullSizeOutput(false);
         lock_guard<mutex> lk(m_subtrkLock);
         if (insertAfterId == -1)

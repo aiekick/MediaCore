@@ -176,6 +176,34 @@ namespace MediaCore
         return res;
     }
 
+    // new API
+    bool VideoTransformFilter_FFImpl::SetPositionOffset(float offsetH, float offsetV)
+    {
+        lock_guard<recursive_mutex> lk(m_processLock);
+        bool res = VideoTransformFilter_Base::SetPositionOffset(offsetH, offsetV);
+        if (m_needUpdatePositionParam)
+            m_needUpdateScaleParam = true;
+        return res;
+    }
+
+    bool VideoTransformFilter_FFImpl::SetPositionOffsetH(float value)
+    {
+        lock_guard<recursive_mutex> lk(m_processLock);
+        bool res = VideoTransformFilter_Base::SetPositionOffsetH(value);
+        if (m_needUpdatePositionParam)
+            m_needUpdateScaleParam = true;
+        return res;
+    }
+
+    bool VideoTransformFilter_FFImpl::SetPositionOffsetV(float value)
+    {
+        lock_guard<recursive_mutex> lk(m_processLock);
+        bool res = VideoTransformFilter_Base::SetPositionOffsetV(value);
+        if (m_needUpdatePositionParam)
+            m_needUpdateScaleParam = true;
+        return res;
+    }
+
     AVFilterGraph* VideoTransformFilter_FFImpl::CreateFilterGraph(const string& filterArgs, uint32_t w, uint32_t h, AVPixelFormat inputPixfmt, AVFilterContext** inputCtx, AVFilterContext** outputCtx)
     {
         AVFilterGraph* avfg = avfilter_graph_alloc();
@@ -301,6 +329,16 @@ namespace MediaCore
 
     bool VideoTransformFilter_FFImpl::PerformCropStage(const ImGui::ImMat& inMat, SelfFreeAVFramePtr& avfrmPtr)
     {
+        if (m_needUpdateCropParamScale)
+        {
+            m_cropL = m_inWidth * m_fcropL;
+            m_cropR = m_inWidth * m_fcropR;
+            m_cropT = m_inHeight * m_fcropT;
+            m_cropB = m_inHeight * m_fcropB;
+            m_needUpdateCropParamScale = false;
+            m_needUpdateCropParam = true;
+        }
+        
         if (m_needUpdateCropParam)
         {
             uint32_t rectX = m_cropL<m_inWidth ? m_cropL : m_inWidth-1;
@@ -659,6 +697,12 @@ namespace MediaCore
 
     bool VideoTransformFilter_FFImpl::PerformPositionStage(const ImGui::ImMat& inMat, SelfFreeAVFramePtr& avfrmPtr)
     {
+        if (m_needUpdatePositionParamScale)
+        {
+            m_posOffsetH = m_fposOffsetH * m_outWidth;
+            m_posOffsetV = m_fposOffsetV * m_outHeight;
+            m_needUpdatePositionParamScale = false;
+        }
         const int32_t posOffH = m_posOffsetH+m_posOffCompH;
         const int32_t posOffV = m_posOffsetV+m_posOffCompV;
         if (!avfrmPtr->data[0] && (inMat.w != m_outWidth || inMat.h != m_outHeight || posOffH != 0 || posOffV != 0))
@@ -774,6 +818,8 @@ namespace MediaCore
         m_needUpdateScaleParam = false;
         m_needUpdateRotateParam = false;
         m_needUpdatePositionParam = false;
+        m_needUpdateCropParamScale = false;
+        m_needUpdatePositionParamScale = false;
 
         if (avfrmPtr->data[0])
         {

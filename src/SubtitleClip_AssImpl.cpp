@@ -39,6 +39,8 @@ SubtitleImage SubtitleClip_AssImpl::Image(int64_t timeOffset)
     auto iter = m_renderedImages.find(StartTime()+timeOffset);
     if (iter == m_renderedImages.end())
     {
+        bool x_absolute = false;
+        bool y_absolute = false;
         int64_t pos = /*StartTime()+*/timeOffset;
         for (int i = 0; i < m_keyPoints.GetCurveCount(); i++)
         {
@@ -66,9 +68,15 @@ SubtitleImage SubtitleClip_AssImpl::Image(int64_t timeOffset)
             else if (name == "AngleZ" || name == "RotationZ")
                 _SetRotationZ(value, false);
             else if (name == "OffsetH")
+            {
                 _SetOffsetH(value, false);
+                x_absolute = true;
+            }
             else if (name == "OffsetV")
+            {
                 _SetOffsetV(value, false);
+                y_absolute = true;
+            }
             else
                 Log(WARN) << "[SubtitleClip_AssImpl] UNKNOWN curve name '" << name << "', value=" << value << "." << endl;
         }
@@ -85,7 +93,7 @@ SubtitleImage SubtitleClip_AssImpl::Image(int64_t timeOffset)
             m_assEvent->Text[len] = 0;
             m_styledTextNeedUpdate = false;
         }
-        m_renderedImages[timeOffset] = m_renderCb(this, timeOffset);
+        m_renderedImages[timeOffset] = m_renderCb(this, timeOffset, x_absolute, y_absolute);
     }
     return m_renderedImages[timeOffset];
 }
@@ -153,6 +161,8 @@ void SubtitleClip_AssImpl::SyncStyle(const SubtitleStyle& style)
     m_rotationZ = style.Angle();
     m_offsetH = style.OffsetH();
     m_offsetV = style.OffsetV();
+    m_foffsetH = style.OffsetHScale();
+    m_foffsetV = style.OffsetVScale();
     SetAlignment(style.Alignment());
 
     if (!m_useTrackStyle)
@@ -352,6 +362,34 @@ void SubtitleClip_AssImpl::_SetOffsetV(int32_t value, bool clearCache)
     if (m_offsetV == value)
         return;
     m_offsetV = value;
+    if (!m_useTrackStyle && clearCache)
+        m_renderedImages.clear();
+}
+
+void SubtitleClip_AssImpl::SetOffsetH(float value)
+{
+    return _SetOffsetH(value, true);
+}
+
+void SubtitleClip_AssImpl::_SetOffsetH(float value, bool clearCache)
+{
+    if (m_foffsetH == value)
+        return;
+    m_foffsetH = value;
+    if (!m_useTrackStyle && clearCache)
+        m_renderedImages.clear();
+}
+
+void SubtitleClip_AssImpl::SetOffsetV(float value)
+{
+    return _SetOffsetV(value, true);
+}
+
+void SubtitleClip_AssImpl::_SetOffsetV(float value, bool clearCache)
+{
+    if (m_foffsetV == value)
+        return;
+    m_foffsetV = value;
     if (!m_useTrackStyle && clearCache)
         m_renderedImages.clear();
 }
@@ -560,6 +598,8 @@ void SubtitleClip_AssImpl::CloneStyle(SubtitleClipHolder from, double wRatio, do
     SetRotationZ(from->RotationZ());
     SetOffsetH((int32_t)(from->OffsetH()*wRatio));
     SetOffsetV((int32_t)(from->OffsetV()*hRatio));
+    SetOffsetH(from->OffsetHScale());
+    SetOffsetV(from->OffsetVScale());
     SetAlignment(from->Alignment());
 }
 

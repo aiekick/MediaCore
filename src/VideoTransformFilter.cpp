@@ -66,6 +66,12 @@ namespace MediaCore
             newInstance->SetCropMarginT(GetCropMarginT());
             newInstance->SetCropMarginR(GetCropMarginR());
             newInstance->SetCropMarginB(GetCropMarginB());
+            newInstance->SetPositionOffsetH(GetPositionOffsetHScale());
+            newInstance->SetPositionOffsetV(GetPositionOffsetVScale());
+            newInstance->SetCropMarginL(GetCropMarginLScale());
+            newInstance->SetCropMarginT(GetCropMarginTScale());
+            newInstance->SetCropMarginR(GetCropMarginRScale());
+            newInstance->SetCropMarginB(GetCropMarginBScale());
             newInstance->SetKeyPoint(*GetKeyPoint());
             return newInstance;
         }
@@ -230,6 +236,78 @@ namespace MediaCore
             return m_filter->GetKeyPoint();
         }
 
+        // new API for scaler value
+        bool SetPositionOffset(float offsetH, float offsetV) override
+        {
+            return m_filter->SetPositionOffset(offsetH, offsetV);
+        }
+        
+        bool SetPositionOffsetH(float value) override
+        {
+            return m_filter->SetPositionOffsetH(value);
+        }
+
+        bool SetPositionOffsetV(float value) override
+        {
+            return m_filter->SetPositionOffsetV(value);
+        }
+
+        bool SetCropMargin(float left, float top, float right, float bottom) override
+        {
+            return m_filter->SetCropMargin(left, top, right, bottom);
+        }
+
+        bool SetCropMarginL(float value) override
+        {
+            return m_filter->SetCropMarginL(value);
+        }
+
+        bool SetCropMarginT(float value) override
+        {
+            return m_filter->SetCropMarginT(value);
+        }
+
+        bool SetCropMarginR(float value) override
+        {
+            return m_filter->SetCropMarginR(value);
+        }
+
+        bool SetCropMarginB(float value) override
+        {
+            return m_filter->SetCropMarginB(value);
+        }
+
+        float GetPositionOffsetHScale() const override
+        {
+            return m_filter->GetPositionOffsetHScale();
+        }
+
+        float GetPositionOffsetVScale() const override
+        {
+            return m_filter->GetPositionOffsetVScale();
+        }
+
+        float GetCropMarginLScale() const override
+        {
+            return m_filter->GetCropMarginLScale();
+        }
+
+        float GetCropMarginTScale() const override
+        {
+            return m_filter->GetCropMarginTScale();
+        }
+
+        float GetCropMarginRScale() const override
+        {
+            return m_filter->GetCropMarginRScale();
+        }
+
+        float GetCropMarginBScale() const override
+        {
+            return m_filter->GetCropMarginBScale();
+        }
+        //
+        
         string GetError() const override
         {
             return m_filter->GetError();

@@ -531,6 +531,62 @@ bool SubtitleTrack_AssImpl::_SetOffsetV(int value, bool clearCache)
     return true;
 }
 
+bool SubtitleTrack_AssImpl::SetOffsetH(float value)
+{
+    return _SetOffsetH(value);
+}
+
+bool SubtitleTrack_AssImpl::_SetOffsetH(float value, bool clearCache)
+{
+    if (m_overrideStyle.OffsetHScale() == value)
+        return true;
+    m_logger->Log(DEBUG) << "Set offsetHScale '" << value << "'" << endl;
+    auto bias = value-m_overrideStyle.OffsetHScale();
+    m_overrideStyle.SetOffsetH(value);
+    if (clearCache)
+    {
+        if (m_outputFullSize)
+            ClearRenderCache();
+        else
+        {
+            for (auto& clip : m_clips)
+            {
+                SubtitleClip_AssImpl* assClip = dynamic_cast<SubtitleClip_AssImpl*>(clip.get());
+                assClip->UpdateImageAreaX(bias);
+            }
+        }
+    }
+    return true;
+}
+
+bool SubtitleTrack_AssImpl::SetOffsetV(float value)
+{
+    return _SetOffsetV(value);
+}
+
+bool SubtitleTrack_AssImpl::_SetOffsetV(float value, bool clearCache)
+{
+    if (m_overrideStyle.OffsetVScale() == value)
+        return true;
+    m_logger->Log(DEBUG) << "Set offsetVScale '" << value << "'" << endl;
+    auto bias = value-m_overrideStyle.OffsetVScale();
+    m_overrideStyle.SetOffsetV(value);
+    if (clearCache)
+    {
+        if (m_outputFullSize)
+            ClearRenderCache();
+        else
+        {
+            for (auto& clip : m_clips)
+            {
+                SubtitleClip_AssImpl* assClip = dynamic_cast<SubtitleClip_AssImpl*>(clip.get());
+                assClip->UpdateImageAreaY(bias);
+            }
+        }
+    }
+    return true;
+}
+
 bool SubtitleTrack_AssImpl::SetOffsetCompensationV(int32_t value)
 {
     if (m_offsetCompensationV == value)
@@ -538,6 +594,26 @@ bool SubtitleTrack_AssImpl::SetOffsetCompensationV(int32_t value)
     m_logger->Log(DEBUG) << "Set offsetCompensationV '" << value << "'" << endl;
     int32_t bias = value-m_offsetCompensationV;
     m_offsetCompensationV = value;
+    if (m_outputFullSize)
+        ClearRenderCache();
+    else
+    {
+        for (auto& clip : m_clips)
+        {
+            SubtitleClip_AssImpl* assClip = dynamic_cast<SubtitleClip_AssImpl*>(clip.get());
+            assClip->UpdateImageAreaY(bias);
+        }
+    }
+    return true;
+}
+
+bool SubtitleTrack_AssImpl::SetOffsetCompensationV(float value)
+{
+    if (m_foffsetCompensationV == value)
+        return true;
+    m_logger->Log(DEBUG) << "Set offsetCompensationV Scale'" << value << "'" << endl;
+    auto bias = value-m_foffsetCompensationV;
+    m_foffsetCompensationV = value;
     if (m_outputFullSize)
         ClearRenderCache();
     else
@@ -983,7 +1059,7 @@ SubtitleClipHolder SubtitleTrack_AssImpl::NewClip(int64_t startTime, int64_t dur
         }
     }
 
-    SubtitleClip_AssImpl* newAssClip = new SubtitleClip_AssImpl(assEvent, m_asstrk, bind(&SubtitleTrack_AssImpl::RenderSubtitleClip, this, _1, _2));
+    SubtitleClip_AssImpl* newAssClip = new SubtitleClip_AssImpl(assEvent, m_asstrk, bind(&SubtitleTrack_AssImpl::RenderSubtitleClip, this, _1, _2, std::placeholders::_3, std::placeholders::_4));
     SubtitleClipHolder hNewClip(newAssClip);
     m_clips.insert(iter, hNewClip);
 
@@ -1221,6 +1297,8 @@ SubtitleTrackHolder SubtitleTrack_AssImpl::Clone(uint32_t frmW, uint32_t frmH)
     newTrk->SetBackgroundColor(trkStyle.BackgroundColor());
     newTrk->SetOffsetH((int)(trkStyle.OffsetH()*wRatio));
     newTrk->SetOffsetV((int)(trkStyle.OffsetV()*hRatio));
+    newTrk->SetOffsetH(trkStyle.OffsetHScale());
+    newTrk->SetOffsetV(trkStyle.OffsetVScale());
 
     for (auto c : m_clips)
     {
@@ -1507,7 +1585,7 @@ bool SubtitleTrack_AssImpl::ReadFile(const string& path)
         {
             ASS_Event* e = m_asstrk->events+i;
             e->ReadOrder = i;
-            SubtitleClip_AssImpl* assClip = new SubtitleClip_AssImpl(e, m_asstrk, bind(&SubtitleTrack_AssImpl::RenderSubtitleClip, this, _1, _2));
+            SubtitleClip_AssImpl* assClip = new SubtitleClip_AssImpl(e, m_asstrk, bind(&SubtitleTrack_AssImpl::RenderSubtitleClip, this, _1, _2, std::placeholders::_3, std::placeholders::_4));
             SubtitleClipHolder hSubClip(assClip);
             m_clips.push_back(hSubClip);
             if (assClip->EndTime() > m_duration)
@@ -1564,7 +1642,7 @@ private:
     void* m_buf;
 };
 
-SubtitleImage SubtitleTrack_AssImpl::RenderSubtitleClip(SubtitleClip* clip, int64_t timeOffset)
+SubtitleImage SubtitleTrack_AssImpl::RenderSubtitleClip(SubtitleClip* clip, int64_t timeOffset, bool absolutePosX, bool absolutePosY)
 {
     int64_t pos = clip->StartTime()+timeOffset;
     UpdateTrackStyleByKeyPoints(pos);
@@ -1616,10 +1694,20 @@ SubtitleImage SubtitleTrack_AssImpl::RenderSubtitleClip(SubtitleClip* clip, int6
 
     // calculate the final display box
     SubtitleImage::Rect dispBox{assBox};
-    const int32_t offsetH = clip->IsUsingTrackStyle() ? m_overrideStyle.OffsetH() : clip->OffsetH();
-    const int32_t offsetV = clip->IsUsingTrackStyle() ? m_overrideStyle.OffsetV() : clip->OffsetV();
-    dispBox.x += offsetH;
-    dispBox.y += offsetV+m_offsetCompensationV;
+    //const int32_t offsetH = clip->IsUsingTrackStyle() ? m_overrideStyle.OffsetH() : clip->OffsetH();
+    //const int32_t offsetV = clip->IsUsingTrackStyle() ? m_overrideStyle.OffsetV() : clip->OffsetV();
+    const float offsetH = clip->IsUsingTrackStyle() ? m_overrideStyle.OffsetHScale() : clip->OffsetHScale();
+    const float offsetV = clip->IsUsingTrackStyle() ? m_overrideStyle.OffsetVScale() : clip->OffsetVScale();
+    if (absolutePosX)
+        dispBox.x = offsetH * m_frmW;
+    else
+        dispBox.x += offsetH * m_frmW;
+    
+    if (absolutePosY)
+        dispBox.y = offsetV * m_frmH;
+    else
+        dispBox.y += offsetV * m_frmH + m_foffsetCompensationV * m_frmH;
+
     m_logger->Log(DEBUG) << "--> assBox:{ " << assBox.x << ", " << assBox.y << ", " << assBox.w << ", " << assBox.h
             << " }, offsetH/V=( " << offsetH << ", " << offsetV << ")." << endl;
 
@@ -1660,8 +1748,8 @@ SubtitleImage SubtitleTrack_AssImpl::RenderSubtitleClip(SubtitleClip* clip, int6
         unsigned char* assPtr;
         if (m_outputFullSize)
         {
-            drawBox.x += offsetH;
-            drawBox.y += offsetV;
+            drawBox.x += offsetH * m_frmW;
+            drawBox.y += offsetV * m_frmH;
             if (drawBox.x+drawBox.w <= 0 || drawBox.y+dispBox.h <= 0 ||
                 drawBox.x >= m_frmW || drawBox.y >= m_frmH)
             {

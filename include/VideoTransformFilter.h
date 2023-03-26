@@ -72,6 +72,23 @@ namespace MediaCore
         virtual double GetScaleV() const = 0;
         virtual ImGui::KeyPointEditor* GetKeyPoint() = 0;
 
+        // new API for scaler value
+        virtual bool SetPositionOffset(float offsetH, float offsetV) = 0;
+        virtual bool SetPositionOffsetH(float value) = 0;
+        virtual bool SetPositionOffsetV(float value) = 0;
+        virtual bool SetCropMargin(float left, float top, float right, float bottom) = 0;
+        virtual bool SetCropMarginL(float value) = 0;
+        virtual bool SetCropMarginT(float value) = 0;
+        virtual bool SetCropMarginR(float value) = 0;
+        virtual bool SetCropMarginB(float value) = 0;
+        virtual float GetPositionOffsetHScale() const = 0;
+        virtual float GetPositionOffsetVScale() const = 0;
+        virtual float GetCropMarginLScale() const = 0;
+        virtual float GetCropMarginTScale() const = 0;
+        virtual float GetCropMarginRScale() const = 0;
+        virtual float GetCropMarginBScale() const = 0;
+        // 
+
         virtual std::string GetError() const = 0;
     };
 

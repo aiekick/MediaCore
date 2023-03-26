@@ -50,6 +50,8 @@ namespace MediaCore
         virtual int Alignment() const = 0;  // 1: left; 2: center; 3: right
         virtual int32_t OffsetH() const = 0;
         virtual int32_t OffsetV() const = 0;
+        virtual float OffsetHScale() const = 0;
+        virtual float OffsetVScale() const = 0;
         virtual int Italic() const = 0;
         virtual int Bold() const = 0;
         virtual bool UnderLine() const = 0;
