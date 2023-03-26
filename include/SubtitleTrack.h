@@ -92,7 +92,7 @@ namespace MediaCore
         virtual void SetVisible(bool enable) = 0;
         virtual bool SaveAs(const std::string& subFilePath) = 0;
 
-        virtual SubtitleTrackHolder Clone(uint32_t frmW, uint32_t frmH) = 0;
+        virtual SubtitleTrackHolder Clone(uint32_t frmW, uint32_t frmH, bool useScale = true) = 0;
         virtual std::string GetError() const = 0;
 
         MEDIACORE_API static SubtitleTrackHolder BuildFromFile(int64_t id, const std::string& url);

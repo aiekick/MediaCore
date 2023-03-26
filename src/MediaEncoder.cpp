@@ -1032,6 +1032,7 @@ private:
         m_logger->Log(DEBUG) << "Enter VideoEncodingThreadProc()..." << endl;
 
         SelfFreeAVFramePtr encfrm;
+        m_vidNullFrameSent = false;
         while (!m_quit)
         {
             bool idleLoop = true;
@@ -1053,7 +1054,9 @@ private:
                 {
                     {
                         lock_guard<mutex> lk(m_videncLock);
-                        avcodec_send_frame(m_videncCtx, nullptr);
+                        avcodec_send_frame(m_videncCtx, NULL);
+                        m_vidNullFrameSent = true;
+                        // m_logger->Log(DEBUG) << "--> SEND NULL video frame!! fferr=" << fferr << endl;
                     }
                     if (fferr == 0)
                     {
@@ -1073,6 +1076,7 @@ private:
                 {
                     lock_guard<mutex> lk(m_videncLock);
                     fferr = avcodec_send_frame(m_videncCtx, encfrm.get());
+                    // m_logger->Log(DEBUG) << "--> Encode video frame, mts=" << av_rescale_q(encfrm->pts, m_videncCtx->time_base, MILLISEC_TIMEBASE) << ", fferr=" << fferr << endl;
                 }
                 if (fferr == 0)
                 {
@@ -1080,6 +1084,7 @@ private:
                     //     << MillisecToString(av_rescale_q(encfrm->pts, m_videncCtx->time_base, MILLISEC_TIMEBASE))
                     //     << "(" << encfrm->pts << ")." << endl;
                     encfrm = nullptr;
+                    idleLoop = false;
                 }
                 else
                 {
@@ -1089,11 +1094,10 @@ private:
                         break;
                     }
                 }
-                idleLoop = false;
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(1));
+                this_thread::sleep_for(chrono::milliseconds(2));
         }
 
         m_logger->Log(DEBUG) << "Leave VideoEncodingThreadProc()." << endl;
@@ -1104,6 +1108,7 @@ private:
         m_logger->Log(DEBUG) << "Enter AudioEncodingThreadProc()..." << endl;
 
         SelfFreeAVFramePtr encfrm;
+        m_audNullFrameSent = false;
         while (!m_quit)
         {
             bool idleLoop = true;
@@ -1121,7 +1126,9 @@ private:
                 {
                     {
                         lock_guard<mutex> lk(m_audencLock);
-                        fferr = avcodec_send_frame(m_audencCtx, nullptr);
+                        fferr = avcodec_send_frame(m_audencCtx, NULL);
+                        m_audNullFrameSent = true;
+                        // m_logger->Log(DEBUG) << "================> SEND NULL audio frame!! fferr=" << fferr << endl;
                     }
                     if (fferr == 0)
                     {
@@ -1142,6 +1149,7 @@ private:
                 {
                     lock_guard<mutex> lk(m_audencLock);
                     fferr = avcodec_send_frame(m_audencCtx, encfrm.get());
+                    // m_logger->Log(DEBUG) << "================> Encode audio frame, mts=" << av_rescale_q(encfrm->pts, m_audencCtx->time_base, MILLISEC_TIMEBASE) << ", fferr=" << fferr << endl;
                 }
                 if (fferr == 0)
                 {
@@ -1159,7 +1167,7 @@ private:
             }
 
             if (idleLoop)
-                this_thread::sleep_for(chrono::milliseconds(1));
+                this_thread::sleep_for(chrono::milliseconds(2));
         }
 
         m_logger->Log(DEBUG) << "Leave AudioEncodingThreadProc()." << endl;
@@ -1177,11 +1185,14 @@ private:
             bool idleLoop = true;
             int fferr;
 
+            // bool toRecvVidpkt = !m_videncEof && !avpktLoaded && (vidposMts <= audposMts || m_audencEof);
+            // m_logger->Log(DEBUG) << "toRecvVidpkt=" << toRecvVidpkt << ", m_videncEof=" << m_videncEof << ", avpktLoaded=" << avpktLoaded << ", vidposMts=" << vidposMts << ", audposMts=" << audposMts << ", m_audencEof=" << m_audencEof << endl;
             if (!m_videncEof && !avpktLoaded && (vidposMts <= audposMts || m_audencEof))
             {
                 {
                     lock_guard<mutex> lk(m_videncLock);
                     fferr = avcodec_receive_packet(m_videncCtx, &avpkt);
+                    // m_logger->Log(DEBUG) << "\t\t\t--> Receive video packet, fferr=" << fferr << endl;
                 }
                 if (fferr == 0)
                 {
@@ -1202,13 +1213,22 @@ private:
                     m_logger->Log(Error) << "In muxing thread, video 'avcodec_receive_packet' FAILED with return code " << fferr << "!" << endl;
                     break;
                 }
+                else if (m_vidNullFrameSent)
+                {
+                    m_logger->Log(WARN) << "WRONG STATE! Video encoder still returns AVERROR(EAGAIN) after NULL frame is sent! Treat it as AVERROR_EOF received." << endl;
+                    m_videncEof = true;
+                    idleLoop = false;
+                }
             }
 
+            // bool toRecvAudpkt = !m_audencEof && !avpktLoaded && (audposMts <= vidposMts || m_videncEof);
+            // m_logger->Log(DEBUG) << "toRecvAudpkt=" << toRecvAudpkt << ", m_audencEof=" << m_audencEof << ", avpktLoaded=" << avpktLoaded << ", vidposMts=" << vidposMts << ", audposMts=" << audposMts << ", m_videncEof=" << m_videncEof << endl;
             if (!m_audencEof && !avpktLoaded && (audposMts <= vidposMts || m_videncEof))
             {
                 {
                     lock_guard<mutex> lk(m_audencLock);
                     fferr = avcodec_receive_packet(m_audencCtx, &avpkt);
+                    // m_logger->Log(DEBUG) << "\t\t\t================> Receive audio packet, fferr=" << fferr << endl;
                 }
                 if (fferr == 0)
                 {
@@ -1228,6 +1248,12 @@ private:
                 {
                     m_logger->Log(Error) << "In muxing thread, audio 'avcodec_receive_packet' FAILED with return code " << fferr << "!" << endl;
                     break;
+                }
+                else if (m_audNullFrameSent)
+                {
+                    m_logger->Log(WARN) << "WRONG STATE! Audio encoder still returns AVERROR(EAGAIN) after NULL frame is sent! Treat it as AVERROR_EOF received." << endl;
+                    m_audencEof = true;
+                    idleLoop = false;
                 }
             }
 
@@ -1301,6 +1327,7 @@ private:
     uint32_t m_vmatQMaxSize;
     mutex m_vmatQLock;
     bool m_vidinpEof{false};
+    bool m_vidNullFrameSent{false};
     bool m_videncEof{false};
     // audio encoding thread
     thread m_audencThread;
@@ -1308,6 +1335,7 @@ private:
     uint32_t m_audfrmQMaxSize;
     mutex m_audfrmQLock;
     bool m_audinpEof{false};
+    bool m_audNullFrameSent{false};
     bool m_audencEof{false};
     // muxing thread
     thread m_muxThread;

@@ -1271,15 +1271,20 @@ bool SubtitleTrack_AssImpl::SaveAs(const string& assFilePath)
     return true;
 }
 
-SubtitleTrackHolder SubtitleTrack_AssImpl::Clone(uint32_t frmW, uint32_t frmH)
+SubtitleTrackHolder SubtitleTrack_AssImpl::Clone(uint32_t frmW, uint32_t frmH, bool useScale)
 {
     SubtitleTrackHolder hSubTrk = NewEmptyTrack(m_id);
     SubtitleTrack_AssImpl* newTrk = dynamic_cast<SubtitleTrack_AssImpl*>(hSubTrk.get());
     newTrk->SetFrameSize(frmW, frmH);
+    newTrk->SetAlignment(m_overrideStyle.Alignment());
+    if (useScale)
+        newTrk->SetOffsetCompensationV(m_foffsetCompensationV);
+    else
+        newTrk->SetOffsetCompensationV(m_offsetCompensationV);
     newTrk->EnableFullSizeOutput(false);
+
     const double wRatio = (double)frmW/m_frmW;
     const double hRatio = (double)frmH/m_frmH;
-
     auto& trkStyle = DefaultStyle();
     newTrk->SetFont(trkStyle.Font());
     newTrk->SetScaleX(trkStyle.ScaleX());

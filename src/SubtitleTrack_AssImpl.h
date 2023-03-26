@@ -176,7 +176,7 @@ namespace MediaCore
         void SetVisible(bool enable) override { m_visible = enable; }
         bool SaveAs(const std::string& subFilePath) override;
 
-        SubtitleTrackHolder Clone(uint32_t frmW, uint32_t frmH) override;
+        SubtitleTrackHolder Clone(uint32_t frmW, uint32_t frmH, bool useScale) override;
         std::string GetError() const override { return m_errMsg; }
 
         static bool Initialize();
