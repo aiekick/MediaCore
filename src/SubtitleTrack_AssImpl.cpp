@@ -128,12 +128,14 @@ SubtitleTrackStyle_AssImpl::SubtitleTrackStyle_AssImpl(const SubtitleTrackStyle_
 {
     BuildFromAssStyle(&a.m_assStyle);
     m_offsetV = a.m_offsetV;
+    m_foffsetV = a.m_foffsetV;
 }
 
 SubtitleTrackStyle_AssImpl& SubtitleTrackStyle_AssImpl::operator=(const SubtitleTrackStyle_AssImpl& a)
 {
     BuildFromAssStyle(&a.m_assStyle);
     m_offsetV = a.m_offsetV;
+    m_foffsetV = a.m_foffsetV;
     return *this;
 }
 
@@ -1312,7 +1314,7 @@ SubtitleTrackHolder SubtitleTrack_AssImpl::Clone(uint32_t frmW, uint32_t frmH, b
         auto c2 = newTrk->NewClip(c->StartTime(), c->Duration());
         c2->SetText(c->Text());
         if (!c->IsUsingTrackStyle())
-            c2->CloneStyle(c);
+            c2->CloneStyle(c, wRatio, hRatio);
     }
     return hSubTrk;
 }
