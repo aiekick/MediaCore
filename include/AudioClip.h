@@ -19,6 +19,7 @@
 #include <memory>
 #include <atomic>
 #include <string>
+#include <ostream>
 #include "MediaCore.h"
 #include "MediaReader.h"
 
@@ -60,6 +61,8 @@ namespace MediaCore
         virtual void SetDirection(bool forward) = 0;
         virtual void SetFilter(AudioFilterHolder filter) = 0;
         virtual AudioFilterHolder GetFilter() const = 0;
+
+        friend std::ostream& operator<<(std::ostream& os, AudioClip& clip);
     };
 
     struct AudioFilter

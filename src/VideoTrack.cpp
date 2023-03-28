@@ -503,7 +503,7 @@ namespace MediaCore
         m_overlaps.sort(OVERLAP_SORT_CMP);
     }
 
-    MEDIACORE_API std::ostream& operator<<(std::ostream& os, VideoTrack& track)
+    std::ostream& operator<<(std::ostream& os, VideoTrack& track)
     {
         os << "{ clips(" << track.m_clips.size() << "): [";
         auto clipIter = track.m_clips.begin();

@@ -54,6 +54,20 @@ struct MultiTrackAudioReader
     virtual MediaCore::AudioEffectFilterHolder GetAudioEffectFilter() = 0;
 
     virtual std::string GetError() const = 0;
+
+    friend std::ostream& operator<<(std::ostream& os, MultiTrackAudioReader& mtaReader)
+    {
+        os << ">>> MultiTrackAudioReader :" << std::endl;
+        auto trackIter = mtaReader.TrackListBegin();
+        while (trackIter != mtaReader.TrackListEnd())
+        {
+            auto& track = *trackIter;
+            os << "\t Track#" << track->Id() << " : " << track << std::endl;
+            trackIter++;
+        }
+        os << "<<< [END]MultiTrackAudioReader";
+        return os;
+    }
 };
 
 MEDIACORE_API MultiTrackAudioReader* CreateMultiTrackAudioReader();

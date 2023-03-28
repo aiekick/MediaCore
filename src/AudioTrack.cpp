@@ -583,6 +583,8 @@ public:
         return m_frameSize;
     }
 
+    friend ostream& operator<<(ostream& os, AudioTrack_Impl& track);
+
 private:
     static function<bool(const AudioClipHolder&, const AudioClipHolder&)> CLIP_SORT_CMP;
     static function<bool(const AudioOverlapHolder&, const AudioOverlapHolder&)> OVERLAP_SORT_CMP;
@@ -952,4 +954,40 @@ ALogger* GetAudioTrackLogger()
 {
     return GetLogger("AudioTrack");
 }
+
+ostream& operator<<(ostream& os, AudioTrack_Impl& track)
+{
+    os << "{ clips(" << track.m_clips.size() << "): [";
+    auto clipIter = track.m_clips.begin();
+    while (clipIter != track.m_clips.end())
+    {
+        os << *((*clipIter).get());
+        clipIter++;
+        if (clipIter != track.m_clips.end())
+            os << ", ";
+        else
+            break;
+    }
+    os << "], overlaps(" << track.m_overlaps.size() << "): [";
+    auto ovlpIter = track.m_overlaps.begin();
+    while (ovlpIter != track.m_overlaps.end())
+    {
+        os << *((*ovlpIter).get());
+        ovlpIter++;
+        if (ovlpIter != track.m_overlaps.end())
+            os << ", ";
+        else
+            break;
+    }
+    os << "] }";
+    return os;
+}
+
+ostream& operator<<(ostream& os, AudioTrackHolder hTrack)
+{
+    AudioTrack_Impl* pTrkImpl = dynamic_cast<AudioTrack_Impl*>(hTrack.get());
+    os << *pTrkImpl;
+    return os;
+}
+
 }

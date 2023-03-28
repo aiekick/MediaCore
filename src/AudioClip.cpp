@@ -293,6 +293,13 @@ namespace MediaCore
         return AudioClipHolder(new AudioClip_AudioImpl(id, hParser, outChannels, outSampleRate, outSampleFormat, start, startOffset, endOffset));
     }
 
+    ostream& operator<<(ostream& os, AudioClip& clip)
+    {
+            os << "{'id':" << clip.Id() << ", 'start':" << clip.Start() << ", 'dur':" << clip.Duration()
+                << ", 'soff':" << clip.StartOffset() << ", 'eoff':" << clip.EndOffset() << "}";
+        return os;
+    }
+
     ///////////////////////////////////////////////////////////////////////////////////////////
     // DefaultAudioTransition_Impl
     ///////////////////////////////////////////////////////////////////////////////////////////

@@ -20,6 +20,7 @@
 #include <mutex>
 #include <list>
 #include <string>
+#include <ostream>
 #include "MediaCore.h"
 #include "AudioClip.h"
 #include "AudioEffectFilter.h"
@@ -65,4 +66,5 @@ namespace MediaCore
 
     AudioTrackHolder CreateAudioTrack(int64_t id, uint32_t outChannels, uint32_t outSampleRate, const std::string& outSampleFormat);
     Logger::ALogger* GetAudioTrackLogger();
+    MEDIACORE_API std::ostream& operator<<(std::ostream& os, AudioTrackHolder hTrack);
 }

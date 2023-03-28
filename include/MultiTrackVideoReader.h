@@ -68,7 +68,7 @@ struct MultiTrackVideoReader
         auto trackIter = mtvReader.TrackListBegin();
         while (trackIter != mtvReader.TrackListEnd())
         {
-            MediaCore::VideoTrackHolder& track = *trackIter;
+            auto& track = *trackIter;
             os << "\t Track#" << track->Id() << " : " << *(track.get()) << std::endl;
             trackIter++;
         }
