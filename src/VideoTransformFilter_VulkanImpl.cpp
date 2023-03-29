@@ -222,7 +222,7 @@ namespace MediaCore
         {
             ImGui::VkMat vkmat; vkmat.type = IM_DT_INT8;
             vkmat.w = m_outWidth; vkmat.h = m_outHeight;
-            m_warpAffine.filter(inMat, vkmat, m_affineMat, m_interpMode, ImPixel(0, 0, 0, 0), m_cropRect);
+            m_warpAffine.warp(inMat, vkmat, m_affineMat, m_interpMode, ImPixel(0, 0, 0, 0), m_cropRect);
             vkmat.time_stamp = inMat.time_stamp;
             vkmat.rate = inMat.rate;
             vkmat.flags = inMat.flags;

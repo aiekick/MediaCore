@@ -24,6 +24,8 @@
 #include <immat.h>
 #if IMGUI_VULKAN_SHADER
 #include <ImVulkanShader.h>
+#include <ColorConvert_vulkan.h>
+#include <Resize_vulkan.h>
 #endif
 extern "C"
 {
