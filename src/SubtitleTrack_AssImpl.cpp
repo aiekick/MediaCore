@@ -1717,8 +1717,9 @@ SubtitleImage SubtitleTrack_AssImpl::RenderSubtitleClip(SubtitleClip* clip, int6
     else
         dispBox.y += offsetV * m_frmH + m_foffsetCompensationV * m_frmH;
 
-    m_logger->Log(DEBUG) << "--> assBox:{ " << assBox.x << ", " << assBox.y << ", " << assBox.w << ", " << assBox.h
-            << " }, offsetH/V=( " << offsetH << ", " << offsetV << ")." << endl;
+    m_logger->Log(DEBUG) << "--> assBox:{" << assBox.x << "," << assBox.y << "," << assBox.w << "," << assBox.h
+            << "}, dispBox:{" << dispBox.x << "," << dispBox.y
+            << "} offsetH/V=( " << offsetH << ", " << offsetV << ")." << endl;
 
     // if ASS_Image's content is not changed && only output text image, then return previous rendered image
     if (!m_outputFullSize && (detectChange == 0 || detectChange == 1))
