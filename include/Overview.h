@@ -16,28 +16,37 @@
 */
 
 #pragma once
+#include <cstdint>
+#include <memory>
+#include <vector>
 #include "immat.h"
 #include "MediaParser.h"
 #include "Logger.h"
 #include "MediaCore.h"
 
-struct MediaOverview
+namespace MediaCore
 {
+struct Overview
+{
+    using Holder = std::shared_ptr<Overview>;
+    static MEDIACORE_API Holder CreateInstance();
+    static MEDIACORE_API Logger::ALogger* GetLogger();
+
     virtual bool Open(const std::string& url, uint32_t snapshotCount = 20) = 0;
-    virtual bool Open(MediaParserHolder hParser, uint32_t snapshotCount = 20) = 0;
-    virtual MediaParserHolder GetMediaParser() const = 0;
+    virtual bool Open(MediaParser::Holder hParser, uint32_t snapshotCount = 20) = 0;
+    virtual MediaParser::Holder GetMediaParser() const = 0;
     virtual void Close() = 0;
     virtual bool GetSnapshots(std::vector<ImGui::ImMat>& snapshots) = 0;
 
     struct Waveform
     {
+        using Holder = std::shared_ptr<Waveform>;
         double aggregateSamples;
         double aggregateDuration;
         float minSample{0}, maxSample{0};
         std::vector<std::vector<float>> pcm;
     };
-    using WaveformHolder = std::shared_ptr<Waveform>;
-    virtual WaveformHolder GetWaveform() const = 0;
+    virtual Waveform::Holder GetWaveform() const = 0;
     virtual bool SetSingleFramePixels(uint32_t pixels) = 0;
     virtual bool SetFixedAggregateSamples(double aggregateSamples) = 0;
 
@@ -52,9 +61,9 @@ struct MediaOverview
     virtual bool SetOutColorFormat(ImColorFormat clrfmt) = 0;
     virtual bool SetResizeInterpolateMode(ImInterpolateMode interp) = 0;
 
-    virtual MediaInfo::InfoHolder GetMediaInfo() const = 0;
-    virtual const MediaInfo::VideoStream* GetVideoStream() const = 0;
-    virtual const MediaInfo::AudioStream* GetAudioStream() const = 0;
+    virtual MediaInfo::Holder GetMediaInfo() const = 0;
+    virtual const VideoStream* GetVideoStream() const = 0;
+    virtual const AudioStream* GetAudioStream() const = 0;
 
     virtual uint32_t GetVideoWidth() const = 0;
     virtual uint32_t GetVideoHeight() const = 0;
@@ -67,8 +76,4 @@ struct MediaOverview
     virtual void EnableHwAccel(bool enable) = 0;
     virtual std::string GetError() const = 0;
 };
-
-MEDIACORE_API MediaOverview* CreateMediaOverview();
-MEDIACORE_API void ReleaseMediaOverview(MediaOverview** msrc);
-
-MEDIACORE_API Logger::ALogger* GetMediaOverviewLogger();
+}

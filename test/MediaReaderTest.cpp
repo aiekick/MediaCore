@@ -22,14 +22,14 @@ using namespace Logger;
 using Clock = chrono::steady_clock;
 
 static bool g_isOpening = false;
-static MediaParserHolder g_mediaParser;
+static MediaParser::Holder g_mediaParser;
 static bool g_videoOnly = false;
 static bool g_audioOnly = false;
 static bool g_useHwAccel = true;
 static int32_t g_audioStreamCount = 0;
 static int32_t g_chooseAudioIndex = -1;
 // video
-static MediaReader* g_vidrdr = nullptr;
+static MediaReader::Holder g_vidrdr;
 static double g_playStartPos = 0.f;
 static Clock::time_point g_playStartTp;
 static bool g_isPlay = false;
@@ -41,7 +41,7 @@ static const pair<double, double> G_DurTable[] = {
 static ImTextureID g_imageTid;
 static ImVec2 g_imageDisplaySize = { 640, 360 };
 // audio
-static MediaReader* g_audrdr = nullptr;
+static MediaReader::Holder g_audrdr;
 static AudioRender* g_audrnd = nullptr;
 const int c_audioRenderChannels = 2;
 const int c_audioRenderSampleRate = 44100;
@@ -57,7 +57,7 @@ const string c_bookmarkPath = "bookmark.ini";
 class SimplePcmStream : public AudioRender::ByteStream
 {
 public:
-    SimplePcmStream(MediaReader* audrdr) : m_audrdr(audrdr) {}
+    SimplePcmStream(MediaReader::Holder audrdr) : m_audrdr(audrdr) {}
 
     uint32_t Read(uint8_t* buff, uint32_t buffSize, bool blocking) override
     {
@@ -82,7 +82,7 @@ public:
     }
 
 private:
-    MediaReader* m_audrdr;
+    MediaReader::Holder m_audrdr;
 };
 static SimplePcmStream* g_pcmStream = nullptr;
 
@@ -92,9 +92,9 @@ static void MediaReader_Initialize(void** handle)
 {
     GetDefaultLogger()
         ->SetShowLevels(DEBUG);
-    GetMediaParserLogger()
+    MediaParser::GetLogger()
         ->SetShowLevels(DEBUG);
-    GetMediaReaderLogger()
+    MediaReader::GetLogger()
         ->SetShowLevels(DEBUG);
 
 #ifdef USE_BOOKMARK
@@ -112,11 +112,11 @@ static void MediaReader_Initialize(void** handle)
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = c_imguiIniPath.c_str();
 
-    g_vidrdr = CreateMediaReader();
-    g_audrdr = CreateMediaReader();
+    g_vidrdr = MediaReader::CreateInstance();
+    g_audrdr = MediaReader::CreateInstance();
 
     g_pcmStream = new SimplePcmStream(g_audrdr);
-    g_audrnd = CreateAudioRender();
+    g_audrnd = AudioRender::CreateInstance();
     g_audrnd->OpenDevice(c_audioRenderSampleRate, c_audioRenderChannels, c_audioRenderFormat, g_pcmStream);
     if (g_dumpPcm)
         g_fpPcmFile = fopen("MediaReaderTest_PcmDump.pcm", "wb");
@@ -127,15 +127,15 @@ static void MediaReader_Finalize(void** handle)
     if (g_audrnd)
     {
         g_audrnd->CloseDevice();
-        ReleaseAudioRender(&g_audrnd);
+        AudioRender::ReleaseInstance(&g_audrnd);
     }
     if (g_pcmStream)
     {
         delete g_pcmStream;
         g_pcmStream = nullptr;
     }
-    ReleaseMediaReader(&g_vidrdr);
-    ReleaseMediaReader(&g_audrdr);
+    g_vidrdr = nullptr;
+    g_audrdr = nullptr;
     if (g_imageTid)
     {
         ImGui::ImDestroyTexture(g_imageTid);
@@ -209,7 +209,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
         if (g_vidrdr->IsOpened())
         {
             isForward = g_vidrdr->IsDirectionForward();
-            const MediaInfo::VideoStream* vstminfo = g_vidrdr->GetVideoStream();
+            const VideoStream* vstminfo = g_vidrdr->GetVideoStream();
             float vidDur = vstminfo ? (float)vstminfo->duration : 0;
             mediaDur = vidDur;
         }
@@ -218,7 +218,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
             if (!g_vidrdr->IsOpened())
             {
                 isForward = g_audrdr->IsDirectionForward();
-                const MediaInfo::AudioStream* astminfo = g_audrdr->GetAudioStream();
+                const AudioStream* astminfo = g_audrdr->GetAudioStream();
                 float audDur = astminfo ? (float)astminfo->duration : 0;
                 mediaDur = audDur;
             }
@@ -379,7 +379,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
                     auto mediaInfo = g_mediaParser->GetMediaInfo();
                     for (auto stream : mediaInfo->streams)
                     {
-                        if (stream->type == MediaInfo::AUDIO)
+                        if (stream->type == MediaType::AUDIO)
                             g_audioStreamCount++;
                     }
                     g_chooseAudioIndex = 0;
@@ -411,7 +411,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
             g_imageTid = nullptr;
             g_isLongCacheDur = false;
             string filePathName = ImGuiFileDialog::Instance()->GetFilePathName();
-            g_mediaParser = CreateMediaParser();
+            g_mediaParser = MediaParser::CreateInstance();
             g_mediaParser->Open(filePathName);
             g_isOpening = true;
         }

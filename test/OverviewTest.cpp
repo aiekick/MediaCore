@@ -5,15 +5,16 @@
 #include <ImGuiFileDialog.h>
 #include <string>
 #include <sstream>
-#include "MediaOverview.h"
+#include "Overview.h"
 #include "FFUtils.h"
 #include "Logger.h"
 
 using namespace std;
+using namespace MediaCore;
 using namespace Logger;
 
-static MediaOverview* g_movr = nullptr;
-// static MediaOverview* g_movr2 = nullptr;
+static Overview::Holder g_movr;
+// static MediaOverview::Holder g_movr2;
 static uint32_t g_ssCount = 12;
 static vector<ImTextureID> g_snapshotTids;
 ImVec2 g_snapImageSize;
@@ -25,7 +26,7 @@ static void MediaOverview_Initialize(void** handle)
 {
     GetDefaultLogger()
         ->SetShowLevels(DEBUG);
-    GetMediaOverviewLogger()
+    Overview::GetLogger()
         ->SetShowLevels(DEBUG);
 
 #ifdef USE_BOOKMARK
@@ -46,7 +47,7 @@ static void MediaOverview_Initialize(void** handle)
     g_snapshotTids.resize(g_ssCount);
     for (auto& tid : g_snapshotTids)
         tid = nullptr;
-    g_movr = CreateMediaOverview();
+    g_movr = Overview::CreateInstance();
     // g_movr->SetSnapshotSize(320, 180);
     g_movr->EnableHwAccel(true);
     g_movr->SetSnapshotResizeFactor(0.1, 0.1);
@@ -58,8 +59,8 @@ static void MediaOverview_Initialize(void** handle)
 
 static void MediaOverview_Finalize(void** handle)
 {
-    ReleaseMediaOverview(&g_movr);
-    // ReleaseMediaOverview(&g_movr2);
+    g_movr = nullptr;
+    // g_movr2 = nullptr;
     for (auto& tid : g_snapshotTids)
     {
         if (tid)
@@ -98,7 +99,7 @@ static bool MediaOverview_Frame(void * handle, bool app_will_quit)
 
         ImGui::Spacing();
 
-        MediaOverview::WaveformHolder hWaveform = g_movr->GetWaveform();
+        Overview::Waveform::Holder hWaveform = g_movr->GetWaveform();
         double startPos = 0;
         double windowSize = 0;
         if (hWaveform)

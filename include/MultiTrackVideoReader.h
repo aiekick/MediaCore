@@ -16,29 +16,37 @@
 */
 
 #pragma once
+#include <cstdint>
+#include <memory>
 #include <ostream>
 #include <string>
 #include "immat.h"
+#include "MediaCore.h"
 #include "VideoTrack.h"
 #include "SubtitleTrack.h"
 #include "Logger.h"
-#include "MediaCore.h"
 
+namespace MediaCore
+{
 struct MultiTrackVideoReader
 {
-    virtual bool Configure(uint32_t outWidth, uint32_t outHeight, const MediaInfo::Ratio& frameRate) = 0;
-    virtual MultiTrackVideoReader* CloneAndConfigure(uint32_t outWidth, uint32_t outHeight, const MediaInfo::Ratio& frameRate) = 0;
+    using Holder = std::shared_ptr<MultiTrackVideoReader>;
+    static MEDIACORE_API Holder CreateInstance();
+    static MEDIACORE_API Logger::ALogger* GetLogger();
+
+    virtual bool Configure(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) = 0;
+    virtual Holder CloneAndConfigure(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) = 0;
     virtual bool Start() = 0;
     virtual void Close() = 0;
-    virtual MediaCore::VideoTrackHolder AddTrack(int64_t trackId, int64_t insertAfterId = -1) = 0;  // insertAfterId: -1, insert after the tail; -2, insert before the head
-    virtual MediaCore::VideoTrackHolder RemoveTrackByIndex(uint32_t index) = 0;
-    virtual MediaCore::VideoTrackHolder RemoveTrackById(int64_t trackId) = 0;
+    virtual VideoTrack::Holder AddTrack(int64_t trackId, int64_t insertAfterId = -1) = 0;  // insertAfterId: -1, insert after the tail; -2, insert before the head
+    virtual VideoTrack::Holder RemoveTrackByIndex(uint32_t index) = 0;
+    virtual VideoTrack::Holder RemoveTrackById(int64_t trackId) = 0;
     virtual bool ChangeTrackViewOrder(int64_t targetId, int64_t insertAfterId) = 0;
     virtual bool SetDirection(bool forward) = 0;
     virtual bool SeekTo(int64_t pos, bool async = false) = 0;
-    virtual bool ReadVideoFrameEx(int64_t pos, std::vector<MediaCore::CorrelativeFrame>& frames, bool nonblocking = false, bool precise = true) = 0;
+    virtual bool ReadVideoFrameEx(int64_t pos, std::vector<CorrelativeFrame>& frames, bool nonblocking = false, bool precise = true) = 0;
     virtual bool ReadVideoFrame(int64_t pos, ImGui::ImMat& vmat, bool nonblocking = false) = 0;
-    virtual bool ReadNextVideoFrameEx(std::vector<MediaCore::CorrelativeFrame>& frames) = 0;
+    virtual bool ReadNextVideoFrameEx(std::vector<CorrelativeFrame>& frames) = 0;
     virtual bool ReadNextVideoFrame(ImGui::ImMat& vmat) = 0;
     virtual void UpdateDuration() = 0;
     virtual bool Refresh() = 0;
@@ -47,37 +55,21 @@ struct MultiTrackVideoReader
     virtual int64_t ReadPos() const = 0;
 
     virtual uint32_t TrackCount() const = 0;
-    virtual std::list<MediaCore::VideoTrackHolder>::iterator TrackListBegin() = 0;
-    virtual std::list<MediaCore::VideoTrackHolder>::iterator TrackListEnd() = 0;
-    virtual MediaCore::VideoTrackHolder GetTrackByIndex(uint32_t idx) = 0;
-    virtual MediaCore::VideoTrackHolder GetTrackById(int64_t trackId, bool createIfNotExists = false) = 0;
-    virtual MediaCore::VideoClipHolder GetClipById(int64_t clipId) = 0;
-    virtual MediaCore::VideoOverlapHolder GetOverlapById(int64_t ovlpId) = 0;
+    virtual std::list<VideoTrack::Holder>::iterator TrackListBegin() = 0;
+    virtual std::list<VideoTrack::Holder>::iterator TrackListEnd() = 0;
+    virtual VideoTrack::Holder GetTrackByIndex(uint32_t idx) = 0;
+    virtual VideoTrack::Holder GetTrackById(int64_t trackId, bool createIfNotExists = false) = 0;
+    virtual VideoClip::Holder GetClipById(int64_t clipId) = 0;
+    virtual VideoOverlap::Holder GetOverlapById(int64_t ovlpId) = 0;
 
-    virtual MediaCore::SubtitleTrackHolder BuildSubtitleTrackFromFile(int64_t id, const std::string& url, int64_t insertAfterId = -1) = 0;
-    virtual MediaCore::SubtitleTrackHolder NewEmptySubtitleTrack(int64_t id, int64_t insertAfterId = -1) = 0;
-    virtual MediaCore::SubtitleTrackHolder GetSubtitleTrackById(int64_t trackId) = 0;
-    virtual MediaCore::SubtitleTrackHolder RemoveSubtitleTrackById(int64_t trackId) = 0;
+    virtual SubtitleTrackHolder BuildSubtitleTrackFromFile(int64_t id, const std::string& url, int64_t insertAfterId = -1) = 0;
+    virtual SubtitleTrackHolder NewEmptySubtitleTrack(int64_t id, int64_t insertAfterId = -1) = 0;
+    virtual SubtitleTrackHolder GetSubtitleTrackById(int64_t trackId) = 0;
+    virtual SubtitleTrackHolder RemoveSubtitleTrackById(int64_t trackId) = 0;
     virtual bool ChangeSubtitleTrackViewOrder(int64_t targetId, int64_t insertAfterId = -1) = 0;
 
     virtual std::string GetError() const = 0;
-
-    friend std::ostream& operator<<(std::ostream& os, MultiTrackVideoReader& mtvReader)
-    {
-        os << ">>> MultiTrackVideoReader :" << std::endl;
-        auto trackIter = mtvReader.TrackListBegin();
-        while (trackIter != mtvReader.TrackListEnd())
-        {
-            auto& track = *trackIter;
-            os << "\t Track#" << track->Id() << " : " << *(track.get()) << std::endl;
-            trackIter++;
-        }
-        os << "<<< [END]MultiTrackVideoReader";
-        return os;
-    }
 };
 
-MEDIACORE_API MultiTrackVideoReader* CreateMultiTrackVideoReader();
-MEDIACORE_API void ReleaseMultiTrackVideoReader(MultiTrackVideoReader** mreader);
-
-MEDIACORE_API Logger::ALogger* GetMultiTrackVideoReaderLogger();
+MEDIACORE_API std::ostream& operator<<(std::ostream& os, MultiTrackVideoReader::Holder hMtvReader);
+}

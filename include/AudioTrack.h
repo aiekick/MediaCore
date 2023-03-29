@@ -16,7 +16,6 @@
 */
 
 #pragma once
-#include <functional>
 #include <mutex>
 #include <list>
 #include <string>
@@ -28,43 +27,42 @@
 
 namespace MediaCore
 {
-    struct AudioTrack;
-    using AudioTrackHolder = std::shared_ptr<AudioTrack>;
+struct AudioTrack
+{
+    using Holder = std::shared_ptr<AudioTrack>;
+    static MEDIACORE_API Holder CreateInstance(int64_t id, uint32_t outChannels, uint32_t outSampleRate, const std::string& outSampleFormat);
+    static MEDIACORE_API Logger::ALogger* GetLogger();
 
-    struct MEDIACORE_API AudioTrack
-    {
-        virtual AudioTrackHolder Clone(uint32_t outChannels, uint32_t outSampleRate, const std::string& outSampleFormat) = 0;
-        virtual AudioClipHolder AddNewClip(int64_t clipId, MediaParserHolder hParser, int64_t start, int64_t startOffset, int64_t endOffset) = 0;
-        virtual void InsertClip(AudioClipHolder hClip) = 0;
-        virtual void MoveClip(int64_t id, int64_t start) = 0;
-        virtual void ChangeClipRange(int64_t id, int64_t startOffset, int64_t endOffset) = 0;
-        virtual AudioClipHolder RemoveClipById(int64_t clipId) = 0;
-        virtual AudioClipHolder RemoveClipByIndex(uint32_t index) = 0;
+    virtual Holder Clone(uint32_t outChannels, uint32_t outSampleRate, const std::string& outSampleFormat) = 0;
+    virtual AudioClip::Holder AddNewClip(int64_t clipId, MediaParser::Holder hParser, int64_t start, int64_t startOffset, int64_t endOffset) = 0;
+    virtual void InsertClip(AudioClip::Holder hClip) = 0;
+    virtual void MoveClip(int64_t id, int64_t start) = 0;
+    virtual void ChangeClipRange(int64_t id, int64_t startOffset, int64_t endOffset) = 0;
+    virtual AudioClip::Holder RemoveClipById(int64_t clipId) = 0;
+    virtual AudioClip::Holder RemoveClipByIndex(uint32_t index) = 0;
 
-        virtual AudioClipHolder GetClipByIndex(uint32_t index) = 0;
-        virtual AudioClipHolder GetClipById(int64_t id) = 0;
-        virtual AudioOverlapHolder GetOverlapById(int64_t id) = 0;
-        virtual uint32_t ClipCount() const = 0;
-        virtual std::list<AudioClipHolder>::iterator ClipListBegin() = 0;
-        virtual std::list<AudioClipHolder>::iterator ClipListEnd() = 0;
-        virtual uint32_t OverlapCount() const = 0;
-        virtual std::list<AudioOverlapHolder>::iterator OverlapListBegin() = 0;
-        virtual std::list<AudioOverlapHolder>::iterator OverlapListEnd() = 0;
+    virtual AudioClip::Holder GetClipByIndex(uint32_t index) = 0;
+    virtual AudioClip::Holder GetClipById(int64_t id) = 0;
+    virtual AudioOverlap::Holder GetOverlapById(int64_t id) = 0;
+    virtual uint32_t ClipCount() const = 0;
+    virtual std::list<AudioClip::Holder>::iterator ClipListBegin() = 0;
+    virtual std::list<AudioClip::Holder>::iterator ClipListEnd() = 0;
+    virtual uint32_t OverlapCount() const = 0;
+    virtual std::list<AudioOverlap::Holder>::iterator OverlapListBegin() = 0;
+    virtual std::list<AudioOverlap::Holder>::iterator OverlapListEnd() = 0;
 
-        virtual void SeekTo(int64_t pos) = 0;
-        virtual ImGui::ImMat ReadAudioSamples(uint32_t readSamples) = 0;
-        virtual void SetDirection(bool forward) = 0;
-        virtual AudioEffectFilterHolder GetAudioEffectFilter() = 0;
+    virtual void SeekTo(int64_t pos) = 0;
+    virtual ImGui::ImMat ReadAudioSamples(uint32_t readSamples) = 0;
+    virtual void SetDirection(bool forward) = 0;
+    virtual AudioEffectFilter::Holder GetAudioEffectFilter() = 0;
 
-        virtual int64_t Id() const = 0;
-        virtual int64_t Duration() const = 0;
-        virtual uint32_t OutChannels() const = 0;
-        virtual uint32_t OutSampleRate() const = 0;
-        virtual std::string OutSampleFormat() const = 0;
-        virtual uint32_t OutFrameSize() const = 0;
-    };
+    virtual int64_t Id() const = 0;
+    virtual int64_t Duration() const = 0;
+    virtual uint32_t OutChannels() const = 0;
+    virtual uint32_t OutSampleRate() const = 0;
+    virtual std::string OutSampleFormat() const = 0;
+    virtual uint32_t OutFrameSize() const = 0;
+};
 
-    AudioTrackHolder CreateAudioTrack(int64_t id, uint32_t outChannels, uint32_t outSampleRate, const std::string& outSampleFormat);
-    Logger::ALogger* GetAudioTrackLogger();
-    MEDIACORE_API std::ostream& operator<<(std::ostream& os, AudioTrackHolder hTrack);
+MEDIACORE_API std::ostream& operator<<(std::ostream& os, AudioTrack::Holder hTrack);
 }

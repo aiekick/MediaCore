@@ -44,6 +44,8 @@ extern "C"
 using namespace std;
 using namespace Logger;
 
+namespace MediaCore
+{
 class MediaReader_Impl : public MediaReader
 {
 public:
@@ -54,12 +56,14 @@ public:
         m_id = s_idCounter++;
         if (loggerName.empty())
         {
-            m_logger = GetMediaReaderLogger();
+            m_logger = MediaReader::GetLogger();
         }
         else
         {
-            m_logger = GetLogger(loggerName);
-            m_logger->SetShowLevels(DEBUG);
+            m_logger = Logger::GetLogger(loggerName);
+            int n;
+            Level l = MediaReader::GetLogger()->GetShowLevels(n);
+            m_logger->SetShowLevels(l, n);
         }
     }
 
@@ -75,7 +79,7 @@ public:
         if (IsOpened())
             Close();
 
-        MediaParserHolder hParser = CreateMediaParser();
+        MediaParser::Holder hParser = MediaParser::CreateInstance();
         if (!hParser->Open(url))
         {
             m_errMsg = hParser->GetError();
@@ -93,7 +97,7 @@ public:
         return true;
     }
 
-    bool Open(MediaParserHolder hParser) override
+    bool Open(MediaParser::Holder hParser) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!hParser || !hParser->IsOpened())
@@ -116,7 +120,7 @@ public:
         return true;
     }
 
-    MediaParserHolder GetMediaParser() const override
+    MediaParser::Holder GetMediaParser() const override
     {
         return m_hParser;
     }
@@ -291,7 +295,7 @@ public:
 
         if (m_audStmIdx >= 0)
         {
-            MediaInfo::AudioStream* audStream = dynamic_cast<MediaInfo::AudioStream*>(m_hMediaInfo->streams[m_audStmIdx].get());
+            AudioStream* audStream = dynamic_cast<AudioStream*>(m_hMediaInfo->streams[m_audStmIdx].get());
             m_audDurTs = audStream->duration;
             m_audFrmSize = (audStream->bitDepth>>3)*audStream->channels;
         }
@@ -789,30 +793,30 @@ public:
         return { m_forwardCacheDur, m_backwardCacheDur };
     }
 
-    MediaInfo::InfoHolder GetMediaInfo() const override
+    MediaInfo::Holder GetMediaInfo() const override
     {
         return m_hMediaInfo;
     }
 
-    const MediaInfo::VideoStream* GetVideoStream() const override
+    const VideoStream* GetVideoStream() const override
     {
-        MediaInfo::InfoHolder hInfo = m_hMediaInfo;
+        MediaInfo::Holder hInfo = m_hMediaInfo;
         if (!hInfo || m_vidStmIdx < 0)
             return nullptr;
-        return dynamic_cast<MediaInfo::VideoStream*>(hInfo->streams[m_vidStmIdx].get());
+        return dynamic_cast<VideoStream*>(hInfo->streams[m_vidStmIdx].get());
     }
 
-    const MediaInfo::AudioStream* GetAudioStream() const override
+    const AudioStream* GetAudioStream() const override
     {
-        MediaInfo::InfoHolder hInfo = m_hMediaInfo;
+        MediaInfo::Holder hInfo = m_hMediaInfo;
         if (!hInfo || m_audStmIdx < 0)
             return nullptr;
-        return dynamic_cast<MediaInfo::AudioStream*>(hInfo->streams[m_audStmIdx].get());
+        return dynamic_cast<AudioStream*>(hInfo->streams[m_audStmIdx].get());
     }
 
     uint32_t GetVideoOutWidth() const override
     {
-        const MediaInfo::VideoStream* vidStream = GetVideoStream();
+        const VideoStream* vidStream = GetVideoStream();
         if (!vidStream)
             return 0;
         uint32_t w = m_frmCvt.GetOutWidth();
@@ -824,7 +828,7 @@ public:
 
     uint32_t GetVideoOutHeight() const override
     {
-        const MediaInfo::VideoStream* vidStream = GetVideoStream();
+        const VideoStream* vidStream = GetVideoStream();
         if (!vidStream)
             return 0;
         uint32_t h = m_frmCvt.GetOutHeight();
@@ -841,7 +845,7 @@ public:
 
     uint32_t GetAudioOutChannels() const override
     {
-        const MediaInfo::AudioStream* audStream = GetAudioStream();
+        const AudioStream* audStream = GetAudioStream();
         if (!audStream)
             return 0;
 #if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
@@ -853,7 +857,7 @@ public:
 
     uint32_t GetAudioOutSampleRate() const override
     {
-        const MediaInfo::AudioStream* audStream = GetAudioStream();
+        const AudioStream* audStream = GetAudioStream();
         if (!audStream)
             return 0;
         return m_swrOutSampleRate;
@@ -861,7 +865,7 @@ public:
 
     uint32_t GetAudioOutFrameSize() const override
     {
-        const MediaInfo::AudioStream* audStream = GetAudioStream();
+        const AudioStream* audStream = GetAudioStream();
         if (!audStream)
             return 0;
 
@@ -931,7 +935,7 @@ private:
         return av_rescale_q(pts-m_swrOutStartTime, m_swrOutTimebase, MILLISEC_TIMEBASE);
     }
 
-    bool OpenMedia(MediaParserHolder hParser)
+    bool OpenMedia(MediaParser::Holder hParser)
     {
         int fferr = avformat_open_input(&m_avfmtCtx, hParser->GetUrl().c_str(), nullptr, nullptr);
         if (fferr < 0)
@@ -1296,12 +1300,17 @@ private:
         if (foundBestFrame)
         {
             if (wait)
-                while(!m_close && !bestfrmIter->ownfrm)
-                    this_thread::sleep_for(chrono::milliseconds(5));
-            if (bestfrmIter->ownfrm)
             {
-                if (!m_frmCvt.ConvertImage(bestfrmIter->ownfrm.get(), m, bestfrmIter->ts))
-                    m_logger->Log(Error) << "FAILED to convert AVFrame to ImGui::ImMat for '" << m_hParser->GetUrl() << "' @pos " << ts << "sec! Error is '" << m_frmCvt.GetError() << "'." << endl;
+                // while(!m_close && !bestfrmIter->ownfrm)
+                while(!m_close && bestfrmIter->vmat.empty())
+                    this_thread::sleep_for(chrono::milliseconds(5));
+            }
+            // if (bestfrmIter->ownfrm)
+            if (!bestfrmIter->vmat.empty())
+            {
+                // if (!m_frmCvt.ConvertImage(bestfrmIter->ownfrm.get(), m, bestfrmIter->ts))
+                //     m_logger->Log(Error) << "FAILED to convert AVFrame to ImGui::ImMat for '" << m_hParser->GetUrl() << "' @pos " << ts << "sec! Error is '" << m_frmCvt.GetError() << "'." << endl;
+                m = bestfrmIter->vmat;
             }
             else
                 m.time_stamp = bestfrmIter->ts;
@@ -1484,7 +1493,8 @@ private:
     struct VideoFrame
     {
         SelfFreeAVFramePtr decfrm;
-        SelfFreeAVFramePtr ownfrm;
+        // SelfFreeAVFramePtr ownfrm;
+        ImGui::ImMat vmat;
         double ts;
     };
 
@@ -2055,24 +2065,26 @@ private:
                 {
                     if (vf.decfrm)
                     {
-                        AVFrame* frm = vf.decfrm.get();
-                        if (IsHwFrame(frm))
-                        {
-                            SelfFreeAVFramePtr swfrm = AllocSelfFreeAVFramePtr();
-                            if (swfrm)
-                            {
-                                if (HwFrameToSwFrame(swfrm.get(), frm))
-                                    vf.ownfrm = swfrm;
-                                else
-                                    m_logger->Log(Error) << "FAILED to convert HW frame to SW frame!" << endl;
-                            }
-                            else
-                                m_logger->Log(Error) << "FAILED to allocate new SelfFreeAVFramePtr!" << endl;
-                        }
-                        else
-                        {
-                            vf.ownfrm = vf.decfrm;
-                        }
+                        if (!m_frmCvt.ConvertImage(vf.decfrm.get(), vf.vmat, vf.ts))
+                            m_logger->Log(Error) << "FAILED to convert AVFrame to ImGui::ImMat for '" << m_hParser->GetUrl() << "' @pos " << vf.ts << "sec! Error is '" << m_frmCvt.GetError() << "'." << endl;
+                        // AVFrame* frm = vf.decfrm.get();
+                        // if (IsHwFrame(frm))
+                        // {
+                        //     SelfFreeAVFramePtr swfrm = AllocSelfFreeAVFramePtr();
+                        //     if (swfrm)
+                        //     {
+                        //         if (HwFrameToSwFrame(swfrm.get(), frm))
+                        //             vf.ownfrm = swfrm;
+                        //         else
+                        //             m_logger->Log(Error) << "FAILED to convert HW frame to SW frame!" << endl;
+                        //     }
+                        //     else
+                        //         m_logger->Log(Error) << "FAILED to allocate new SelfFreeAVFramePtr!" << endl;
+                        // }
+                        // else
+                        // {
+                        //     vf.ownfrm = vf.decfrm;
+                        // }
                         vf.decfrm = nullptr;
                         currTask->frmCnt--;
                         if (currTask->frmCnt < 0)
@@ -3119,7 +3131,8 @@ private:
                     }
                     for (auto& vf : tsk->vfAry)
                     {
-                        if (!vf.ownfrm)
+                        // if (!vf.ownfrm)
+                        if (vf.vmat.empty())
                         {
                             imgEof = false;
                             break;
@@ -3197,8 +3210,8 @@ private:
     ALogger* m_logger;
     string m_errMsg;
 
-    MediaParserHolder m_hParser;
-    MediaInfo::InfoHolder m_hMediaInfo;
+    MediaParser::Holder m_hParser;
+    MediaInfo::Holder m_hMediaInfo;
     MediaParser::SeekPointsHolder m_hSeekPoints;
     bool m_opened{false};
     bool m_configured{false};
@@ -3266,7 +3279,7 @@ private:
     mutex m_bldtskByPriLock;
     atomic_int32_t m_pendingVidfrmCnt{0};
     int32_t m_maxPendingVidfrmCnt{4};
-    double m_forwardCacheDur{5};
+    double m_forwardCacheDur{1.5};
     double m_backwardCacheDur{1};
     CacheWindow m_cacheWnd;
     CacheWindow m_bldtskSnapWnd;
@@ -3289,27 +3302,21 @@ private:
     FILE* m_fpPcmFile{NULL};
 };
 
-ALogger* MediaReader_Impl::s_logger;
 atomic_uint32_t MediaReader_Impl::s_idCounter{1};
 
-ALogger* GetMediaReaderLogger()
+static const auto MEDIA_READER_HOLDER_DELETER = [] (MediaReader* p) {
+    MediaReader_Impl* ptr = dynamic_cast<MediaReader_Impl*>(p);
+    ptr->Close();
+    delete ptr;
+};
+
+MediaReader::Holder MediaReader::CreateInstance(const string& loggerName)
 {
-    if (!MediaReader_Impl::s_logger)
-        MediaReader_Impl::s_logger = GetLogger("MReader");
-    return MediaReader_Impl::s_logger;
+    return MediaReader::Holder(new MediaReader_Impl(loggerName), MEDIA_READER_HOLDER_DELETER);
 }
 
-MediaReader* CreateMediaReader(const string& loggerName)
+ALogger* MediaReader::GetLogger()
 {
-    return new MediaReader_Impl(loggerName);
+    return Logger::GetLogger("MReader");
 }
-
-void ReleaseMediaReader(MediaReader** msrc)
-{
-    if (msrc == nullptr || *msrc == nullptr)
-        return;
-    MediaReader_Impl* ms = dynamic_cast<MediaReader_Impl*>(*msrc);
-    ms->Close();
-    delete ms;
-    *msrc = nullptr;
 }

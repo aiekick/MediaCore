@@ -19,13 +19,20 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <memory>
 #include "immat.h"
 #include "MediaInfo.h"
 #include "Logger.h"
 #include "MediaCore.h"
 
+namespace MediaCore
+{
 struct MediaEncoder
 {
+    using Holder = std::shared_ptr<MediaEncoder>;
+    static MEDIACORE_API Holder CreateInstance();
+    static MEDIACORE_API Logger::ALogger* GetLogger();
+
     struct Option
     {
         enum ValueType
@@ -83,24 +90,24 @@ struct MediaEncoder
         Value value;
     };
 
-    struct EncoderDescription
+    struct Description
     {
         std::string codecName;
         std::string longName;
-        MediaInfo::Type mediaType;
+        MediaType mediaType;
         bool isHardwareEncoder;
         std::vector<Option::Description> optDescList;
 
-        friend std::ostream& operator<<(std::ostream& os, const EncoderDescription& encdesc);
+        friend std::ostream& operator<<(std::ostream& os, const Description& encdesc);
     };
 
-    MEDIACORE_API static bool FindEncoder(const std::string& codecName, std::vector<EncoderDescription>& encoderDescList);
+    static MEDIACORE_API bool FindEncoder(const std::string& codecName, std::vector<Description>& encoderDescList);
 
     virtual bool Open(const std::string& url) = 0;
     virtual bool Close() = 0;
     virtual bool ConfigureVideoStream(const std::string& codecName,
             std::string& imageFormat, uint32_t width, uint32_t height,
-            const MediaInfo::Ratio& frameRate, uint64_t bitRate,
+            const Ratio& frameRate, uint64_t bitRate,
             std::vector<Option>* extraOpts = nullptr) = 0;
     virtual bool ConfigureAudioStream(const std::string& codecName,
             std::string& sampleFormat, uint32_t channels, uint32_t sampleRate, uint64_t bitRate) = 0;
@@ -113,14 +120,10 @@ struct MediaEncoder
     virtual bool IsOpened() const = 0;
     virtual bool HasVideo() const = 0;
     virtual bool HasAudio() const = 0;
-    virtual MediaInfo::Ratio GetVideoFrameRate() const = 0;
+    virtual Ratio GetVideoFrameRate() const = 0;
 
     virtual bool IsHwAccelEnabled() const = 0;
     virtual void EnableHwAccel(bool enable) = 0;
     virtual std::string GetError() const = 0;
 };
-
-MEDIACORE_API MediaEncoder* CreateMediaEncoder();
-MEDIACORE_API void ReleaseMediaEncoder(MediaEncoder** mencoder);
-
-MEDIACORE_API Logger::ALogger* GetMediaEncoderLogger();
+}

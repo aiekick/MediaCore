@@ -45,14 +45,14 @@ using namespace std;
 using namespace Logger;
 using std::placeholders::_1;
 
+namespace MediaCore
+{
 class MediaParser_Impl : public MediaParser
 {
 public:
-    static ALogger* s_logger;
-
     MediaParser_Impl()
     {
-        m_logger = GetMediaParserLogger();
+        m_logger = MediaParser::GetLogger();
         m_taskThread = thread(&MediaParser_Impl::TaskThreadProc, this);
     }
 
@@ -191,7 +191,7 @@ public:
         return m_url;
     }
 
-    MediaInfo::InfoHolder GetMediaInfo(bool wait) override
+    MediaInfo::Holder GetMediaInfo(bool wait) override
     {
         if (wait)
             WaitTaskDone(MEDIA_INFO);
@@ -222,20 +222,20 @@ public:
         return m_bestAudStmIdx;
     }
 
-    MediaInfo::VideoStream* GetBestVideoStream() override
+    VideoStream* GetBestVideoStream() override
     {
         WaitTaskDone(MEDIA_INFO);
         if (m_bestVidStmIdx < 0)
             return nullptr;
-        return dynamic_cast<MediaInfo::VideoStream*>(m_hMediaInfo->streams[m_bestVidStmIdx].get());
+        return dynamic_cast<VideoStream*>(m_hMediaInfo->streams[m_bestVidStmIdx].get());
     }
 
-    MediaInfo::AudioStream* GetBestAudioStream() override
+    AudioStream* GetBestAudioStream() override
     {
         WaitTaskDone(MEDIA_INFO);
         if (m_bestAudStmIdx < 0)
             return nullptr;
-        return dynamic_cast<MediaInfo::AudioStream*>(m_hMediaInfo->streams[m_bestAudStmIdx].get());
+        return dynamic_cast<AudioStream*>(m_hMediaInfo->streams[m_bestAudStmIdx].get());
     }
 
     SeekPointsHolder GetVideoSeekPoints(bool wait) override
@@ -519,7 +519,7 @@ private:
     recursive_mutex m_apiLock;
     bool m_opened{false};
 
-    MediaInfo::InfoHolder m_hMediaInfo;
+    MediaInfo::Holder m_hMediaInfo;
     int m_bestVidStmIdx{-1};
     int m_bestAudStmIdx{-1};
 
@@ -532,17 +532,18 @@ private:
     string m_errMsg;
 };
 
-ALogger* MediaParser_Impl::s_logger;
+static const auto MEDIA_PARSER_HOLDER_DELETER = [] (MediaParser* p) {
+    MediaParser_Impl* ptr = dynamic_cast<MediaParser_Impl*>(p);
+    delete ptr;
+};
 
-MediaParserHolder CreateMediaParser()
+MediaParser::Holder MediaParser::CreateInstance()
 {
-    MediaParserHolder hParser(new MediaParser_Impl());
-    return hParser;
+    return MediaParser::Holder(new MediaParser_Impl(), MEDIA_PARSER_HOLDER_DELETER);
 }
 
-ALogger* GetMediaParserLogger()
+ALogger* MediaParser::GetLogger()
 {
-    if (!MediaParser_Impl::s_logger)
-        MediaParser_Impl::s_logger = GetLogger("MParser");
-    return MediaParser_Impl::s_logger;
+    return Logger::GetLogger("MParser");
+}
 }

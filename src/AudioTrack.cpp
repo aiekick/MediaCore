@@ -16,6 +16,7 @@
 */
 
 #include <sstream>
+#include <functional>
 #include <algorithm>
 #include "AudioTrack.h"
 #include "FFUtils.h"
@@ -42,48 +43,31 @@ public:
             oss << "'" << outSampleFormat << "' is NOT a VALID pcm SAMPLE FORMAT!";
             throw runtime_error(oss.str());
         }
-        m_logger = GetAudioTrackLogger();
+        m_logger = AudioTrack::GetLogger();
         m_readClipIter = m_clips.begin();
         m_bytesPerSample = (uint8_t)av_get_bytes_per_sample(m_outAvSmpfmt);
         m_frameSize = outChannels*m_bytesPerSample;
         m_pcmSizePerSec = m_frameSize*m_outSampleRate;
         ostringstream loggerNameOss;
         loggerNameOss << "AEFilter#" << id;
-        m_aeFilter = CreateAudioEffectFilter(loggerNameOss.str());
+        m_aeFilter = AudioEffectFilter::CreateInstance(loggerNameOss.str());
         if (!m_aeFilter->Init(
             AudioEffectFilter::VOLUME|AudioEffectFilter::COMPRESSOR|AudioEffectFilter::GATE|AudioEffectFilter::EQUALIZER|AudioEffectFilter::LIMITER|AudioEffectFilter::PAN,
             outSampleFormat, outChannels, outSampleRate))
             throw runtime_error(m_aeFilter->GetError());
     }
 
-    virtual ~AudioTrack_Impl() {}
+    Holder Clone(uint32_t outChannels, uint32_t outSampleRate, const string& outSampleFormat) override;
 
-    AudioTrackHolder Clone(uint32_t outChannels, uint32_t outSampleRate, const string& outSampleFormat) override
+    AudioClip::Holder AddNewClip(int64_t clipId, MediaParser::Holder hParser, int64_t start, int64_t startOffset, int64_t endOffset) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
-        AudioTrack_Impl* newInstance = new AudioTrack_Impl(m_id, outChannels, outSampleRate, outSampleFormat);
-        // duplicate the clips
-        for (auto clip : m_clips)
-        {
-            auto newClip = clip->Clone(outChannels, outSampleRate, outSampleFormat);
-            newInstance->m_clips.push_back(newClip);
-            newClip->SetTrackId(m_id);
-            AudioClipHolder lastClip = newInstance->m_clips.back();
-            newInstance->m_duration = lastClip->Start()+lastClip->Duration();
-            newInstance->UpdateClipOverlap(newClip);
-        }
-        return AudioTrackHolder(newInstance);
-    }
-
-    AudioClipHolder AddNewClip(int64_t clipId, MediaParserHolder hParser, int64_t start, int64_t startOffset, int64_t endOffset) override
-    {
-        lock_guard<recursive_mutex> lk(m_apiLock);
-        AudioClipHolder hClip = AudioClip::CreateInstance(clipId, hParser, m_outChannels, m_outSampleRate, m_outSampleFormat, start, startOffset, endOffset);
+        AudioClip::Holder hClip = AudioClip::CreateInstance(clipId, hParser, m_outChannels, m_outSampleRate, m_outSampleFormat, start, startOffset, endOffset);
         InsertClip(hClip);
         return hClip;
     }
 
-    void InsertClip(AudioClipHolder hClip) override
+    void InsertClip(AudioClip::Holder hClip) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!CheckClipRangeValid(hClip->Id(), hClip->Start(), hClip->End()))
@@ -95,7 +79,7 @@ public:
         hClip->SetTrackId(m_id);
         m_clips.sort(CLIP_SORT_CMP);
         // update track duration
-        AudioClipHolder lastClip = m_clips.back();
+        AudioClip::Holder lastClip = m_clips.back();
         m_duration = lastClip->Start()+lastClip->Duration();
         // update overlap
         UpdateClipOverlap(hClip);
@@ -107,7 +91,7 @@ public:
     void MoveClip(int64_t id, int64_t start) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
-        AudioClipHolder hClip = GetClipById(id);
+        AudioClip::Holder hClip = GetClipById(id);
         if (!hClip)
             throw invalid_argument("Invalid value for argument 'id'!");
 
@@ -122,7 +106,7 @@ public:
         // update clip order
         m_clips.sort(CLIP_SORT_CMP);
         // update track duration
-        AudioClipHolder lastClip = m_clips.back();
+        AudioClip::Holder lastClip = m_clips.back();
         m_duration = lastClip->Start()+lastClip->Duration();
         // update overlap
         UpdateClipOverlap(hClip);
@@ -134,7 +118,7 @@ public:
     void ChangeClipRange(int64_t id, int64_t startOffset, int64_t endOffset) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
-        AudioClipHolder hClip = GetClipById(id);
+        AudioClip::Holder hClip = GetClipById(id);
         if (!hClip)
             throw invalid_argument("Invalid value for argument 'id'!");
 
@@ -160,7 +144,7 @@ public:
         // update clip order
         m_clips.sort(CLIP_SORT_CMP);
         // update track duration
-        AudioClipHolder lastClip = m_clips.back();
+        AudioClip::Holder lastClip = m_clips.back();
         m_duration = lastClip->Start()+lastClip->Duration();
         // update overlap
         UpdateClipOverlap(hClip);
@@ -169,16 +153,16 @@ public:
         UpdateReadIterator(pos);
     }
 
-    AudioClipHolder RemoveClipById(int64_t clipId) override
+    AudioClip::Holder RemoveClipById(int64_t clipId) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
-        auto iter = find_if(m_clips.begin(), m_clips.end(), [clipId](const AudioClipHolder& clip) {
+        auto iter = find_if(m_clips.begin(), m_clips.end(), [clipId](const AudioClip::Holder& clip) {
             return clip->Id() == clipId;
         });
         if (iter == m_clips.end())
             return nullptr;
 
-        AudioClipHolder hClip = (*iter);
+        AudioClip::Holder hClip = (*iter);
         m_clips.erase(iter);
         hClip->SetTrackId(-1);
         UpdateClipOverlap(hClip, true);
@@ -187,7 +171,7 @@ public:
             m_duration = 0;
         else
         {
-            AudioClipHolder lastClip = m_clips.back();
+            AudioClip::Holder lastClip = m_clips.back();
             m_duration = lastClip->Start()+lastClip->Duration();
         }
 
@@ -197,7 +181,7 @@ public:
         return hClip;
     }
 
-    AudioClipHolder RemoveClipByIndex(uint32_t index) override
+    AudioClip::Holder RemoveClipByIndex(uint32_t index) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (index >= m_clips.size())
@@ -209,7 +193,7 @@ public:
             iter++; index--;
         }
 
-        AudioClipHolder hClip = (*iter);
+        AudioClip::Holder hClip = (*iter);
         m_clips.erase(iter);
         hClip->SetTrackId(-1);
         UpdateClipOverlap(hClip, true);
@@ -218,7 +202,7 @@ public:
             m_duration = 0;
         else
         {
-            AudioClipHolder lastClip = m_clips.back();
+            AudioClip::Holder lastClip = m_clips.back();
             m_duration = lastClip->Start()+lastClip->Duration();
         }
 
@@ -239,7 +223,7 @@ public:
         UpdateReadIterator(pos);
     }
 
-    AudioEffectFilterHolder GetAudioEffectFilter() override
+    AudioEffectFilter::Holder GetAudioEffectFilter() override
     {
         return m_aeFilter;
     }
@@ -488,7 +472,7 @@ public:
             clip->SetDirection(forward);
     }
 
-    AudioClipHolder GetClipByIndex(uint32_t index) override
+    AudioClip::Holder GetClipByIndex(uint32_t index) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (index >= m_clips.size())
@@ -501,10 +485,10 @@ public:
         return *iter;
     }
 
-    AudioClipHolder GetClipById(int64_t id) override
+    AudioClip::Holder GetClipById(int64_t id) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
-        auto iter = find_if(m_clips.begin(), m_clips.end(), [id] (const AudioClipHolder& clip) {
+        auto iter = find_if(m_clips.begin(), m_clips.end(), [id] (const AudioClip::Holder& clip) {
             return clip->Id() == id;
         });
         if (iter != m_clips.end())
@@ -512,10 +496,10 @@ public:
         return nullptr;
     }
 
-    AudioOverlapHolder GetOverlapById(int64_t id) override
+    AudioOverlap::Holder GetOverlapById(int64_t id) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
-        auto iter = find_if(m_overlaps.begin(), m_overlaps.end(), [id] (const AudioOverlapHolder& ovlp) {
+        auto iter = find_if(m_overlaps.begin(), m_overlaps.end(), [id] (const AudioOverlap::Holder& ovlp) {
             return ovlp->Id() == id;
         });
         if (iter != m_overlaps.end())
@@ -528,12 +512,12 @@ public:
         return m_clips.size();
     }
 
-    list<AudioClipHolder>::iterator ClipListBegin() override
+    list<AudioClip::Holder>::iterator ClipListBegin() override
     {
         return m_clips.begin();
     }
 
-    list<AudioClipHolder>::iterator ClipListEnd() override
+    list<AudioClip::Holder>::iterator ClipListEnd() override
     {
         return m_clips.end();
     }
@@ -543,12 +527,12 @@ public:
         return m_overlaps.size();
     }
 
-    list<AudioOverlapHolder>::iterator OverlapListBegin() override
+    list<AudioOverlap::Holder>::iterator OverlapListBegin() override
     {
         return m_overlaps.begin();
     }
 
-    list<AudioOverlapHolder>::iterator OverlapListEnd() override
+    list<AudioOverlap::Holder>::iterator OverlapListEnd() override
     {
         return m_overlaps.end();
     }
@@ -586,8 +570,8 @@ public:
     friend ostream& operator<<(ostream& os, AudioTrack_Impl& track);
 
 private:
-    static function<bool(const AudioClipHolder&, const AudioClipHolder&)> CLIP_SORT_CMP;
-    static function<bool(const AudioOverlapHolder&, const AudioOverlapHolder&)> OVERLAP_SORT_CMP;
+    static function<bool(const AudioClip::Holder&, const AudioClip::Holder&)> CLIP_SORT_CMP;
+    static function<bool(const AudioOverlap::Holder&, const AudioOverlap::Holder&)> OVERLAP_SORT_CMP;
 
     bool CheckClipRangeValid(int64_t clipId, int64_t start, int64_t end)
     {
@@ -602,7 +586,7 @@ private:
         return true;
     }
 
-    void UpdateClipOverlap(AudioClipHolder hUpdateClip, bool remove = false)
+    void UpdateClipOverlap(AudioClip::Holder hUpdateClip, bool remove = false)
     {
         const int64_t id1 = hUpdateClip->Id();
         // remove invalid overlaps
@@ -636,14 +620,14 @@ private:
                 if (AudioOverlap::HasOverlap(hUpdateClip, clip))
                 {
                     const int64_t id2 = clip->Id();
-                    auto iter = find_if(m_overlaps.begin(), m_overlaps.end(), [id1, id2] (const AudioOverlapHolder& overlap) {
+                    auto iter = find_if(m_overlaps.begin(), m_overlaps.end(), [id1, id2] (const AudioOverlap::Holder& overlap) {
                         const int64_t idf = overlap->FrontClip()->Id();
                         const int64_t idr = overlap->RearClip()->Id();
                         return (id1 == idf && id2 == idr) || (id1 == idr && id2 == idf);
                     });
                     if (iter == m_overlaps.end())
                     {
-                        AudioOverlapHolder hOverlap(new AudioOverlap(0, hUpdateClip, clip));
+                        AudioOverlap::Holder hOverlap = AudioOverlap::CreateInstance(0, hUpdateClip, clip);
                         m_overlaps.push_back(hOverlap);
                     }
                 }
@@ -797,7 +781,7 @@ private:
                 auto iter = m_clips.begin();
                 while (iter != m_clips.end())
                 {
-                    const AudioClipHolder& hClip = *iter;
+                    const AudioClip::Holder& hClip = *iter;
                     int64_t clipPos = pos-hClip->Start();
                     hClip->SeekTo(clipPos);
                     if (m_readClipIter == m_clips.end() && clipPos < hClip->Duration())
@@ -811,7 +795,7 @@ private:
                 auto iter = m_overlaps.begin();
                 while (iter != m_overlaps.end())
                 {
-                    const AudioOverlapHolder& hOverlap = *iter;
+                    const AudioOverlap::Holder& hOverlap = *iter;
                     int64_t overlapPos = pos-hOverlap->Start();
                     if (m_readOverlapIter == m_overlaps.end() && overlapPos < hOverlap->Duration())
                     {
@@ -829,7 +813,7 @@ private:
                 auto riter = m_clips.rbegin();
                 while (riter != m_clips.rend())
                 {
-                    const AudioClipHolder& hClip = *riter;
+                    const AudioClip::Holder& hClip = *riter;
                     int64_t clipPos = pos-hClip->Start();
                     hClip->SeekTo(clipPos);
                     if (m_readClipIter == m_clips.end() && clipPos >= 0)
@@ -842,7 +826,7 @@ private:
                 auto riter = m_overlaps.rbegin();
                 while (riter != m_overlaps.rend())
                 {
-                    const AudioOverlapHolder& hOverlap = *riter;
+                    const AudioOverlap::Holder& hOverlap = *riter;
                     int64_t overlapPos = pos-hOverlap->Start();
                     if (m_readOverlapIter == m_overlaps.end() && overlapPos >= 0)
                         m_readOverlapIter = riter.base();
@@ -919,10 +903,10 @@ private:
     uint8_t m_bytesPerSample;
     uint32_t m_frameSize;
     uint32_t m_pcmSizePerSec;
-    list<AudioClipHolder> m_clips;
-    list<AudioClipHolder>::iterator m_readClipIter;
-    list<AudioOverlapHolder> m_overlaps;
-    list<AudioOverlapHolder>::iterator m_readOverlapIter;
+    list<AudioClip::Holder> m_clips;
+    list<AudioClip::Holder>::iterator m_readClipIter;
+    list<AudioOverlap::Holder> m_overlaps;
+    list<AudioOverlap::Holder>::iterator m_readOverlapIter;
     int64_t m_readSamples{0};
     int64_t m_duration{0};
     list<ImGui::ImMat> m_cachedMats;
@@ -930,29 +914,51 @@ private:
     uint32_t m_readCacheOffsetSamples{0};
     bool m_readForward{true};
     bool m_isPlanar{true};
-    AudioEffectFilterHolder m_aeFilter;
+    AudioEffectFilter::Holder m_aeFilter;
 };
 
-function<bool(const AudioClipHolder&, const AudioClipHolder&)> AudioTrack_Impl::CLIP_SORT_CMP =
-    [](const AudioClipHolder& a, const AudioClipHolder& b)
-    {
-        return a->Start() < b->Start();
-    };
+static const function<void(AudioTrack*)> AUDIO_TRACK_HOLDER_DELETER = [] (AudioTrack* p) {
+    AudioTrack_Impl* ptr = dynamic_cast<AudioTrack_Impl*>(p);
+    delete ptr;
+};
 
-function<bool(const AudioOverlapHolder&, const AudioOverlapHolder&)> AudioTrack_Impl::OVERLAP_SORT_CMP =
-    [](const AudioOverlapHolder& a, const AudioOverlapHolder& b)
-    {
-        return a->Start() < b->Start();
-    };
-
-AudioTrackHolder CreateAudioTrack(int64_t id, uint32_t outChannels, uint32_t outSampleRate, const std::string& outSampleFormat)
+AudioTrack::Holder AudioTrack::CreateInstance(int64_t id, uint32_t outChannels, uint32_t outSampleRate, const std::string& outSampleFormat)
 {
-    return AudioTrackHolder(new AudioTrack_Impl(id, outChannels, outSampleRate, outSampleFormat));
+    return AudioTrack::Holder(new AudioTrack_Impl(id, outChannels, outSampleRate, outSampleFormat), AUDIO_TRACK_HOLDER_DELETER);
 }
 
-ALogger* GetAudioTrackLogger()
+AudioTrack::Holder AudioTrack_Impl::Clone(uint32_t outChannels, uint32_t outSampleRate, const string& outSampleFormat)
 {
-    return GetLogger("AudioTrack");
+    lock_guard<recursive_mutex> lk(m_apiLock);
+    AudioTrack_Impl* newInstance = new AudioTrack_Impl(m_id, outChannels, outSampleRate, outSampleFormat);
+    // duplicate the clips
+    for (auto clip : m_clips)
+    {
+        auto newClip = clip->Clone(outChannels, outSampleRate, outSampleFormat);
+        newInstance->m_clips.push_back(newClip);
+        newClip->SetTrackId(m_id);
+        AudioClip::Holder lastClip = newInstance->m_clips.back();
+        newInstance->m_duration = lastClip->Start()+lastClip->Duration();
+        newInstance->UpdateClipOverlap(newClip);
+    }
+    return AudioTrack::Holder(newInstance, AUDIO_TRACK_HOLDER_DELETER);
+}
+
+function<bool(const AudioClip::Holder&, const AudioClip::Holder&)> AudioTrack_Impl::CLIP_SORT_CMP =
+    [](const AudioClip::Holder& a, const AudioClip::Holder& b)
+    {
+        return a->Start() < b->Start();
+    };
+
+function<bool(const AudioOverlap::Holder&, const AudioOverlap::Holder&)> AudioTrack_Impl::OVERLAP_SORT_CMP =
+    [](const AudioOverlap::Holder& a, const AudioOverlap::Holder& b)
+    {
+        return a->Start() < b->Start();
+    };
+
+ALogger* AudioTrack::GetLogger()
+{
+    return Logger::GetLogger("AudioTrack");
 }
 
 ostream& operator<<(ostream& os, AudioTrack_Impl& track)
@@ -961,7 +967,7 @@ ostream& operator<<(ostream& os, AudioTrack_Impl& track)
     auto clipIter = track.m_clips.begin();
     while (clipIter != track.m_clips.end())
     {
-        os << *((*clipIter).get());
+        os << *clipIter;
         clipIter++;
         if (clipIter != track.m_clips.end())
             os << ", ";
@@ -972,7 +978,7 @@ ostream& operator<<(ostream& os, AudioTrack_Impl& track)
     auto ovlpIter = track.m_overlaps.begin();
     while (ovlpIter != track.m_overlaps.end())
     {
-        os << *((*ovlpIter).get());
+        os << *ovlpIter;
         ovlpIter++;
         if (ovlpIter != track.m_overlaps.end())
             os << ", ";
@@ -983,7 +989,7 @@ ostream& operator<<(ostream& os, AudioTrack_Impl& track)
     return os;
 }
 
-ostream& operator<<(ostream& os, AudioTrackHolder hTrack)
+ostream& operator<<(ostream& os, AudioTrack::Holder hTrack)
 {
     AudioTrack_Impl* pTrkImpl = dynamic_cast<AudioTrack_Impl*>(hTrack.get());
     os << *pTrkImpl;

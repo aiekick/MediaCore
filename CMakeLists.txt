@@ -69,8 +69,8 @@ add_definitions(-DMEDIACORE_SHARED)
 endif(MEDIACORE_STATIC)
 
 set(MEDIACORE_VERSION_MAJOR 1)
-set(MEDIACORE_VERSION_MINOR 0)
-set(MEDIACORE_VERSION_PATCH 2)
+set(MEDIACORE_VERSION_MINOR 1)
+set(MEDIACORE_VERSION_PATCH 0)
 string(TIMESTAMP MEDIACORE_VERSION_BUILD "%y%m%d")
 set(MEDIACORE_VERSION_STRING ${MEDIACORE_VERSION_MAJOR}.${MEDIACORE_VERSION_MINOR}.${MEDIACORE_VERSION_PATCH})
 add_definitions(-DMEDIACORE_VERSION_MAJOR=${MEDIACORE_VERSION_MAJOR})
@@ -90,12 +90,12 @@ add_library(MediaCore ${LIBRARY}
     ${LIB_SRC_DIR}/FontManager_Fontconfig.cpp
     ${LIB_SRC_DIR}/Logger.cpp
     ${LIB_SRC_DIR}/MediaEncoder.cpp
-    ${LIB_SRC_DIR}/MediaOverview.cpp
     ${LIB_SRC_DIR}/MediaParser.cpp
     ${LIB_SRC_DIR}/MediaReader.cpp
     ${LIB_SRC_DIR}/MultiTrackAudioReader.cpp
     ${LIB_SRC_DIR}/MultiTrackVideoReader.cpp
-    ${LIB_SRC_DIR}/SnapshotGenerator.cpp
+    ${LIB_SRC_DIR}/Overview.cpp
+    ${LIB_SRC_DIR}/Snapshot.cpp
     ${LIB_SRC_DIR}/SubtitleClip_AssImpl.cpp
     ${LIB_SRC_DIR}/SubtitleTrack_AssImpl.cpp
     ${LIB_SRC_DIR}/SubtitleTrack.cpp
@@ -150,14 +150,14 @@ add_custom_command(TARGET MediaEncoderTest POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     $<TARGET_FILE:MediaEncoderTest> $<TARGET_FILE_DIR:MediaCore>)
 
-add_executable(MediaOverviewTest
-    ${LIB_TEST_DIR}/MediaOverviewTest.cpp
+add_executable(OverviewTest
+    ${LIB_TEST_DIR}/OverviewTest.cpp
     ${IMGUI_SRC_PATH}/../${IMGUI_APP_ENTRY_SRC}
 )
-target_link_libraries(MediaOverviewTest MediaCore)
-add_custom_command(TARGET MediaOverviewTest POST_BUILD
+target_link_libraries(OverviewTest MediaCore)
+add_custom_command(TARGET OverviewTest POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    $<TARGET_FILE:MediaOverviewTest> $<TARGET_FILE_DIR:MediaCore>)
+    $<TARGET_FILE:OverviewTest> $<TARGET_FILE_DIR:MediaCore>)
 
 add_executable(MediaReaderTest
     ${LIB_TEST_DIR}/MediaReaderTest.cpp
@@ -168,14 +168,14 @@ add_custom_command(TARGET MediaReaderTest POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     $<TARGET_FILE:MediaReaderTest> $<TARGET_FILE_DIR:MediaCore>)
 
-add_executable(MediaSnapshotTest
-    ${LIB_TEST_DIR}/MediaSnapshotTest.cpp
+add_executable(SnapshotTest
+    ${LIB_TEST_DIR}/SnapshotTest.cpp
     ${IMGUI_SRC_PATH}/../${IMGUI_APP_ENTRY_SRC}
 )
-target_link_libraries(MediaSnapshotTest MediaCore)
-add_custom_command(TARGET MediaSnapshotTest POST_BUILD
+target_link_libraries(SnapshotTest MediaCore)
+add_custom_command(TARGET SnapshotTest POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    $<TARGET_FILE:MediaSnapshotTest> $<TARGET_FILE_DIR:MediaCore>)
+    $<TARGET_FILE:SnapshotTest> $<TARGET_FILE_DIR:MediaCore>)
 
 add_executable(MultiTrackAudioTest
     ${LIB_TEST_DIR}/MultiTrackAudioReaderTest.cpp

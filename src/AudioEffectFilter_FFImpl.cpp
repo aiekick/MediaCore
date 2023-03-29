@@ -39,12 +39,12 @@ public:
     AudioEffectFilter_FFImpl(const string& loggerName = "")
     {
         if (loggerName.empty())
-            m_logger = GetAudioEffectFilterLogger();
+            m_logger = AudioEffectFilter::GetLogger();
         else
         {
-            m_logger = GetLogger(loggerName);
+            m_logger = Logger::GetLogger(loggerName);
             int n;
-            Level l = GetAudioEffectFilterLogger()->GetShowLevels(n);
+            Level l = AudioEffectFilter::GetLogger()->GetShowLevels(n);
             m_logger->SetShowLevels(l, n);
         }
     }
@@ -1177,13 +1177,18 @@ const uint32_t AudioEffectFilter::GATE          = 0x8;
 const uint32_t AudioEffectFilter::EQUALIZER     = 0x10;
 const uint32_t AudioEffectFilter::COMPRESSOR    = 0x20;
 
-AudioEffectFilterHolder CreateAudioEffectFilter(const string& loggerName)
+static const auto AUDIO_EFFECT_FILTER_HOLDER_DELETER = [] (AudioEffectFilter* p) {
+    AudioEffectFilter_FFImpl* ptr = dynamic_cast<AudioEffectFilter_FFImpl*>(p);
+    delete ptr;
+};
+
+AudioEffectFilter::Holder AudioEffectFilter::CreateInstance(const string& loggerName)
 {
-    return AudioEffectFilterHolder(new AudioEffectFilter_FFImpl(loggerName));
+    return AudioEffectFilter::Holder(new AudioEffectFilter_FFImpl(loggerName), AUDIO_EFFECT_FILTER_HOLDER_DELETER);
 }
 
-ALogger* GetAudioEffectFilterLogger()
+ALogger* AudioEffectFilter::GetLogger()
 {
-    return GetLogger("AEFilter");
+    return Logger::GetLogger("AEFilter");
 }
 }

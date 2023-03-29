@@ -353,12 +353,20 @@ bool IsHwFrame(const AVFrame* avfrm)
 
 bool HwFrameToSwFrame(AVFrame* swfrm, const AVFrame* hwfrm)
 {
+    int fferr;
     av_frame_unref(swfrm);
-    int fferr = av_hwframe_transfer_data(swfrm, hwfrm, 0);
+    fferr = av_hwframe_map(swfrm, hwfrm, AV_HWFRAME_MAP_READ);
     if (fferr < 0)
     {
-        Log(Error) << "av_hwframe_transfer_data() FAILED! fferr = " << fferr << "." << endl;
-        return false;
+        Log(WARN) << "av_hwframe_map() FAILED! fferr=" << fferr << "." << endl;
+        av_frame_unref(swfrm);
+        swfrm->format = (int)AV_PIX_FMT_NONE;
+        fferr = av_hwframe_transfer_data(swfrm, hwfrm, 0);
+        if (fferr < 0)
+        {
+            Log(Error) << "av_hwframe_transfer_data() FAILED! fferr=" << fferr << "." << endl;
+            return false;
+        }
     }
     av_frame_copy_props(swfrm, hwfrm);
     return true;
@@ -2030,14 +2038,14 @@ namespace FFUtils
     }
 }
 
-static MediaInfo::Ratio MediaInfoRatioFromAVRational(const AVRational& src)
+static MediaCore::Ratio MediaInfoRatioFromAVRational(const AVRational& src)
 {
     return { src.num, src.den };
 }
 
-MediaInfo::InfoHolder GenerateMediaInfoByAVFormatContext(const AVFormatContext* avfmtCtx)
+MediaCore::MediaInfo::Holder GenerateMediaInfoByAVFormatContext(const AVFormatContext* avfmtCtx)
 {
-    MediaInfo::InfoHolder hInfo(new MediaInfo::Info());
+    MediaCore::MediaInfo::Holder hInfo(new MediaCore::MediaInfo());
     hInfo->url = string(avfmtCtx->url);
     double fftb = av_q2d(FF_AV_TIMEBASE);
     if (avfmtCtx->duration != AV_NOPTS_VALUE)
@@ -2047,13 +2055,13 @@ MediaInfo::InfoHolder GenerateMediaInfoByAVFormatContext(const AVFormatContext* 
     hInfo->streams.reserve(avfmtCtx->nb_streams);
     for (uint32_t i = 0; i < avfmtCtx->nb_streams; i++)
     {
-        MediaInfo::StreamHolder hStream;
+        MediaCore::Stream::Holder hStream;
         AVStream* stream = avfmtCtx->streams[i];
         AVCodecParameters* codecpar = stream->codecpar;
         double streamtb = av_q2d(stream->time_base);
         if (codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
         {
-            auto vidStream = new MediaInfo::VideoStream();
+            auto vidStream = new MediaCore::VideoStream();
             vidStream->bitRate = codecpar->bit_rate;
             if (stream->start_time != AV_NOPTS_VALUE)
                 vidStream->startTime = stream->start_time*streamtb;
@@ -2110,11 +2118,11 @@ MediaInfo::InfoHolder GenerateMediaInfoByAVFormatContext(const AVFormatContext* 
             const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get((AVPixelFormat)codecpar->format);
             if (desc && desc->nb_components > 0)
                 vidStream->bitDepth = desc->comp[0].depth;
-            hStream = MediaInfo::StreamHolder(vidStream);
+            hStream = MediaCore::Stream::Holder(vidStream);
         }
         else if (codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
         {
-            auto audStream = new MediaInfo::AudioStream();
+            auto audStream = new MediaCore::AudioStream();
             audStream->bitRate = codecpar->bit_rate;
             if (stream->start_time != AV_NOPTS_VALUE)
                 audStream->startTime = stream->start_time*streamtb;
@@ -2136,11 +2144,11 @@ MediaInfo::InfoHolder GenerateMediaInfoByAVFormatContext(const AVFormatContext* 
             if ((AVSampleFormat)codecpar->format == AV_SAMPLE_FMT_NONE)
                 hInfo->isComplete = false;
             audStream->bitDepth = av_get_bytes_per_sample((AVSampleFormat)codecpar->format) << 3;
-            hStream = MediaInfo::StreamHolder(audStream);
+            hStream = MediaCore::Stream::Holder(audStream);
         }
         else if (codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE)
         {
-            auto subStream = new MediaInfo::SubtitleStream();
+            auto subStream = new MediaCore::SubtitleStream();
             subStream->bitRate = codecpar->bit_rate;
             if (stream->start_time != AV_NOPTS_VALUE)
                 subStream->startTime = stream->start_time*streamtb;
@@ -2151,7 +2159,7 @@ MediaInfo::InfoHolder GenerateMediaInfoByAVFormatContext(const AVFormatContext* 
             else
                 subStream->duration = hInfo->duration;
             subStream->timebase = MediaInfoRatioFromAVRational(stream->time_base);
-            hStream = MediaInfo::StreamHolder(subStream);
+            hStream = MediaCore::Stream::Holder(subStream);
         }
         if (hStream)
             hInfo->streams.push_back(hStream);

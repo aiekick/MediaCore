@@ -25,8 +25,12 @@
 
 namespace MediaCore
 {
-    struct MEDIACORE_API AudioEffectFilter
+    struct AudioEffectFilter
     {
+        using Holder = std::shared_ptr<AudioEffectFilter>;
+        static MEDIACORE_API Holder CreateInstance(const std::string& loggerName = "");
+        static MEDIACORE_API Logger::ALogger* GetLogger();
+
         static const uint32_t VOLUME;
         static const uint32_t PAN;
         static const uint32_t GATE;
@@ -106,8 +110,4 @@ namespace MediaCore
 
         virtual std::string GetError() const = 0;
     };
-    using AudioEffectFilterHolder = std::shared_ptr<AudioEffectFilter>;
-
-    MEDIACORE_API AudioEffectFilterHolder CreateAudioEffectFilter(const std::string& loggerName = "");
-    MEDIACORE_API Logger::ALogger* GetAudioEffectFilterLogger();
 }

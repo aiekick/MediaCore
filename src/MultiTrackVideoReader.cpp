@@ -25,8 +25,9 @@
 
 using namespace std;
 using namespace Logger;
-using namespace MediaCore;
 
+namespace MediaCore
+{
 class MultiTrackVideoReader_Impl : public MultiTrackVideoReader
 {
 public:
@@ -34,16 +35,14 @@ public:
 
     MultiTrackVideoReader_Impl()
     {
-        m_logger = GetMultiTrackVideoReaderLogger();
+        m_logger = MultiTrackVideoReader::GetLogger();
     }
 
     MultiTrackVideoReader_Impl(const MultiTrackVideoReader_Impl&) = delete;
     MultiTrackVideoReader_Impl(MultiTrackVideoReader_Impl&&) = delete;
     MultiTrackVideoReader_Impl& operator=(const MultiTrackVideoReader_Impl&) = delete;
 
-    virtual ~MultiTrackVideoReader_Impl() {}
-
-    bool Configure(uint32_t outWidth, uint32_t outHeight, const MediaInfo::Ratio& frameRate) override
+    bool Configure(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (m_started)
@@ -60,29 +59,29 @@ public:
         m_readFrameIdx = 0;
         m_frameInterval = (double)m_frameRate.den/m_frameRate.num;
 
-        m_mixBlender = CreateVideoBlender();
-        if (!m_mixBlender)
+        m_hMixBlender = VideoBlender::CreateInstance();
+        if (!m_hMixBlender)
         {
             m_errMsg = "CANNOT create new 'VideoBlender' instance for mixing!";
             return false;
         }
-        if (!m_mixBlender->Init("rgba", outWidth, outHeight, outWidth, outHeight, 0, 0))
+        if (!m_hMixBlender->Init("rgba", outWidth, outHeight, outWidth, outHeight, 0, 0))
         {
             ostringstream oss;
-            oss << "Mixer blender initialization FAILED! Error message: '" << m_mixBlender->GetError() << "'.";
+            oss << "Mixer blender initialization FAILED! Error message: '" << m_hMixBlender->GetError() << "'.";
             m_errMsg = oss.str();
             return false;
         }
-        m_subBlender = CreateVideoBlender();
-        if (!m_subBlender)
+        m_hSubBlender = VideoBlender::CreateInstance();
+        if (!m_hSubBlender)
         {
             m_errMsg = "CANNOT create new 'VideoBlender' instance for subtitle!";
             return false;
         }
-        if (!m_subBlender->Init())
+        if (!m_hSubBlender->Init())
         {
             ostringstream oss;
-            oss << "Subtitle blender initialization FAILED! Error message: '" << m_subBlender->GetError() << "'.";
+            oss << "Subtitle blender initialization FAILED! Error message: '" << m_hSubBlender->GetError() << "'.";
             m_errMsg = oss.str();
             return false;
         }
@@ -91,51 +90,7 @@ public:
         return true;
     }
 
-    MultiTrackVideoReader* CloneAndConfigure(uint32_t outWidth, uint32_t outHeight, const MediaInfo::Ratio& frameRate) override
-    {
-        lock_guard<recursive_mutex> lk(m_apiLock);
-        MultiTrackVideoReader_Impl* newInstance = new MultiTrackVideoReader_Impl();
-        if (!newInstance->Configure(outWidth, outHeight, frameRate))
-        {
-            m_errMsg = newInstance->GetError();
-            newInstance->Close(); delete newInstance;
-            return nullptr;
-        }
-
-        // clone all the video tracks
-        {
-            lock_guard<recursive_mutex> lk2(m_trackLock);
-            for (auto track : m_tracks)
-            {
-                newInstance->m_tracks.push_back(track->Clone(outWidth, outHeight, frameRate));
-            }
-        }
-        newInstance->UpdateDuration();
-        // seek to 0
-        newInstance->m_outputCache.clear();
-        for (auto track : newInstance->m_tracks)
-            track->SeekTo(0);
-
-        // clone all the subtitle tracks
-        {
-            lock_guard<mutex> lk2(m_subtrkLock);
-            for (auto subtrk : m_subtrks)
-            {
-                if (!subtrk->IsVisible())
-                    continue;
-                newInstance->m_subtrks.push_back(subtrk->Clone(outWidth, outHeight));
-            }
-        }
-
-        // start new instance
-        if (!newInstance->Start())
-        {
-            m_errMsg = newInstance->GetError();
-            newInstance->Close(); delete newInstance;
-            return nullptr;
-        }
-        return newInstance;
-    }
+    Holder CloneAndConfigure(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) override;
 
     bool Start() override
     {
@@ -171,7 +126,7 @@ public:
         m_frameInterval = 0;
     }
 
-    VideoTrackHolder AddTrack(int64_t trackId, int64_t insertAfterId) override
+    VideoTrack::Holder AddTrack(int64_t trackId, int64_t insertAfterId) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_started)
@@ -182,7 +137,7 @@ public:
 
         TerminateMixingThread();
 
-        VideoTrackHolder hNewTrack(new VideoTrack(trackId, m_outWidth, m_outHeight, m_frameRate));
+        VideoTrack::Holder hNewTrack = VideoTrack::CreateInstance(trackId, m_outWidth, m_outHeight, m_frameRate);
         hNewTrack->SetDirection(m_readForward);
         {
             lock_guard<recursive_mutex> lk2(m_trackLock);
@@ -219,7 +174,7 @@ public:
         return hNewTrack;
     }
 
-    VideoTrackHolder RemoveTrackByIndex(uint32_t index) override
+    VideoTrack::Holder RemoveTrackByIndex(uint32_t index) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_started)
@@ -235,7 +190,7 @@ public:
 
         TerminateMixingThread();
 
-        VideoTrackHolder delTrack;
+        VideoTrack::Holder delTrack;
         {
             lock_guard<recursive_mutex> lk2(m_trackLock);
             auto iter = m_tracks.begin();
@@ -259,7 +214,7 @@ public:
         return delTrack;
     }
 
-    VideoTrackHolder RemoveTrackById(int64_t trackId) override
+    VideoTrack::Holder RemoveTrackById(int64_t trackId) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_started)
@@ -270,10 +225,10 @@ public:
 
         TerminateMixingThread();
 
-        VideoTrackHolder delTrack;
+        VideoTrack::Holder delTrack;
         {
             lock_guard<recursive_mutex> lk2(m_trackLock);
-            auto iter = find_if(m_tracks.begin(), m_tracks.end(), [trackId] (const VideoTrackHolder& track) {
+            auto iter = find_if(m_tracks.begin(), m_tracks.end(), [trackId] (const VideoTrack::Holder& track) {
                 return track->Id() == trackId;
             });
             if (iter != m_tracks.end())
@@ -609,17 +564,17 @@ public:
         return m_tracks.size();
     }
 
-    list<VideoTrackHolder>::iterator TrackListBegin() override
+    list<VideoTrack::Holder>::iterator TrackListBegin() override
     {
         return m_tracks.begin();
     }
 
-    list<VideoTrackHolder>::iterator TrackListEnd() override
+    list<VideoTrack::Holder>::iterator TrackListEnd() override
     {
         return m_tracks.end();
     }
 
-    VideoTrackHolder GetTrackByIndex(uint32_t idx) override
+    VideoTrack::Holder GetTrackByIndex(uint32_t idx) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (idx >= m_tracks.size())
@@ -631,12 +586,12 @@ public:
         return iter != m_tracks.end() ? *iter : nullptr;
     }
 
-    VideoTrackHolder GetTrackById(int64_t id, bool createIfNotExists) override
+    VideoTrack::Holder GetTrackById(int64_t id, bool createIfNotExists) override
     {
         lock(m_apiLock, m_trackLock);
         lock_guard<recursive_mutex> lk(m_apiLock, adopt_lock);
         lock_guard<recursive_mutex> lk2(m_trackLock, adopt_lock);
-        auto iter = find_if(m_tracks.begin(), m_tracks.end(), [id] (const VideoTrackHolder& track) {
+        auto iter = find_if(m_tracks.begin(), m_tracks.end(), [id] (const VideoTrack::Holder& track) {
             return track->Id() == id;
         });
         if (iter != m_tracks.end())
@@ -647,12 +602,12 @@ public:
             return nullptr;
     }
 
-    VideoClipHolder GetClipById(int64_t clipId) override
+    VideoClip::Holder GetClipById(int64_t clipId) override
     {
         lock(m_apiLock, m_trackLock);
         lock_guard<recursive_mutex> lk(m_apiLock, adopt_lock);
         lock_guard<recursive_mutex> lk2(m_trackLock, adopt_lock);
-        VideoClipHolder clip;
+        VideoClip::Holder clip;
         for (auto& track : m_tracks)
         {
             clip = track->GetClipById(clipId);
@@ -668,12 +623,12 @@ public:
         return clip;
     }
 
-    VideoOverlapHolder GetOverlapById(int64_t ovlpId) override
+    VideoOverlap::Holder GetOverlapById(int64_t ovlpId) override
     {
         lock(m_apiLock, m_trackLock);
         lock_guard<recursive_mutex> lk(m_apiLock, adopt_lock);
         lock_guard<recursive_mutex> lk2(m_trackLock, adopt_lock);
-        VideoOverlapHolder ovlp;
+        VideoOverlap::Holder ovlp;
         for (auto& track : m_tracks)
         {
             ovlp = track->GetOverlapById(ovlpId);
@@ -899,7 +854,7 @@ private:
                             if (mixedFrame.empty())
                                 mixedFrame = vmat;
                             else
-                                mixedFrame = m_mixBlender->Blend(vmat, mixedFrame);
+                                mixedFrame = m_hMixBlender->Blend(vmat, mixedFrame);
                         }
                         if (trackIter == m_tracks.begin())
                             timestamp = vmat.time_stamp;
@@ -968,10 +923,10 @@ private:
                     // blend subtitle-image
                     SubtitleImage::Rect dispRect = subImg.Area();
                     ImGui::ImMat submat = subImg.Vmat();
-                    res = m_subBlender->Blend(res, submat, dispRect.x, dispRect.y);
+                    res = m_hSubBlender->Blend(res, submat, dispRect.x, dispRect.y);
                     if (res.empty())
                     {
-                        m_logger->Log(Error) << "FAILED to blend subtitle on the output image! Error message is '" << m_subBlender->GetError() << "'." << endl;
+                        m_logger->Log(Error) << "FAILED to blend subtitle on the output image! Error message is '" << m_hSubBlender->GetError() << "'." << endl;
                     }
                 }
                 else
@@ -989,9 +944,9 @@ private:
     recursive_mutex m_apiLock;
 
     thread m_mixingThread;
-    list<VideoTrackHolder> m_tracks;
+    list<VideoTrack::Holder> m_tracks;
     recursive_mutex m_trackLock;
-    VideoBlenderHolder m_mixBlender;
+    VideoBlender::Holder m_hMixBlender;
 
     list<vector<CorrelativeFrame>> m_outputCache;
     mutex m_outputCacheLock;
@@ -999,7 +954,7 @@ private:
 
     uint32_t m_outWidth{0};
     uint32_t m_outHeight{0};
-    MediaInfo::Ratio m_frameRate;
+    Ratio m_frameRate;
     double m_frameInterval{0};
     int64_t m_duration{0};
     uint32_t m_readFrameIdx{0};
@@ -1011,33 +966,86 @@ private:
 
     list<SubtitleTrackHolder> m_subtrks;
     mutex m_subtrkLock;
-    VideoBlenderHolder m_subBlender;
+    VideoBlender::Holder m_hSubBlender;
 
     bool m_configured{false};
     bool m_started{false};
     bool m_quit{false};
 };
 
-ALogger* MultiTrackVideoReader_Impl::s_logger;
+static const auto MULTI_TRACK_VIDEO_READER_DELETER = [] (MultiTrackVideoReader* p) {
+    MultiTrackVideoReader_Impl* ptr = dynamic_cast<MultiTrackVideoReader_Impl*>(p);
+    ptr->Close();
+    delete ptr;
+};
 
-ALogger* GetMultiTrackVideoReaderLogger()
+MultiTrackVideoReader::Holder MultiTrackVideoReader::CreateInstance()
 {
-    if (!MultiTrackVideoReader_Impl::s_logger)
-        MultiTrackVideoReader_Impl::s_logger = GetLogger("MTVReader");
-    return MultiTrackVideoReader_Impl::s_logger;
+    return MultiTrackVideoReader::Holder(new MultiTrackVideoReader_Impl(), MULTI_TRACK_VIDEO_READER_DELETER);
 }
 
-MultiTrackVideoReader* CreateMultiTrackVideoReader()
+MultiTrackVideoReader::Holder MultiTrackVideoReader_Impl::CloneAndConfigure(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate)
 {
-    return new MultiTrackVideoReader_Impl();
+    lock_guard<recursive_mutex> lk(m_apiLock);
+    MultiTrackVideoReader_Impl* newInstance = new MultiTrackVideoReader_Impl();
+    if (!newInstance->Configure(outWidth, outHeight, frameRate))
+    {
+        m_errMsg = newInstance->GetError();
+        newInstance->Close(); delete newInstance;
+        return nullptr;
+    }
+
+    // clone all the video tracks
+    {
+        lock_guard<recursive_mutex> lk2(m_trackLock);
+        for (auto track : m_tracks)
+        {
+            newInstance->m_tracks.push_back(track->Clone(outWidth, outHeight, frameRate));
+        }
+    }
+    newInstance->UpdateDuration();
+    // seek to 0
+    newInstance->m_outputCache.clear();
+    for (auto track : newInstance->m_tracks)
+        track->SeekTo(0);
+
+    // clone all the subtitle tracks
+    {
+        lock_guard<mutex> lk2(m_subtrkLock);
+        for (auto subtrk : m_subtrks)
+        {
+            if (!subtrk->IsVisible())
+                continue;
+            newInstance->m_subtrks.push_back(subtrk->Clone(outWidth, outHeight));
+        }
+    }
+
+    // start new instance
+    if (!newInstance->Start())
+    {
+        m_errMsg = newInstance->GetError();
+        newInstance->Close(); delete newInstance;
+        return nullptr;
+    }
+    return MultiTrackVideoReader::Holder(newInstance, MULTI_TRACK_VIDEO_READER_DELETER);
 }
 
-void ReleaseMultiTrackVideoReader(MultiTrackVideoReader** mreader)
+ALogger* MultiTrackVideoReader::GetLogger()
 {
-    if (mreader == nullptr || *mreader == nullptr)
-        return;
-    MultiTrackVideoReader_Impl* mtvr = dynamic_cast<MultiTrackVideoReader_Impl*>(*mreader);
-    mtvr->Close();
-    delete mtvr;
-    *mreader = nullptr;
+    return Logger::GetLogger("MTVReader");
+}
+
+ostream& operator<<(ostream& os, MultiTrackVideoReader::Holder hMtvReader)
+{
+    os << ">>> MultiTrackVideoReader :" << std::endl;
+    auto trackIter = hMtvReader->TrackListBegin();
+    while (trackIter != hMtvReader->TrackListEnd())
+    {
+        auto& track = *trackIter;
+        os << "\t Track#" << track->Id() << " : " << track << std::endl;
+        trackIter++;
+    }
+    os << "<<< [END]MultiTrackVideoReader";
+    return os;
+}
 }

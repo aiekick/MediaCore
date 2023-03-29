@@ -27,7 +27,7 @@
 #include <cmath>
 #include <algorithm>
 #include "imgui_helper.h"
-#include "SnapshotGenerator.h"
+#include "Snapshot.h"
 #include "FFUtils.h"
 #include "DebugHelper.h"
 extern "C"
@@ -46,19 +46,20 @@ extern "C"
 }
 
 using namespace std;
-using namespace MediaCore;
 using namespace Logger;
 
 static AVPixelFormat get_hw_format(AVCodecContext *ctx, const AVPixelFormat *pix_fmts);
 
-class SnapshotGenerator_Impl : public SnapshotGenerator
+namespace MediaCore
+{
+namespace Snapshot
+{
+class Generator_Impl : public Snapshot::Generator
 {
 public:
-    static ALogger* s_logger;
-
-    SnapshotGenerator_Impl()
+    Generator_Impl()
     {
-        m_logger = GetSnapshotGeneratorLogger();
+        m_logger = MediaCore::Snapshot::GetLogger();
     }
 
     bool Open(const string& url) override
@@ -67,7 +68,7 @@ public:
         if (IsOpened())
             Close();
 
-        MediaParserHolder hParser = CreateMediaParser();
+        MediaParser::Holder hParser = MediaParser::CreateInstance();
         if (!hParser->Open(url))
         {
             m_errMsg = hParser->GetError();
@@ -88,7 +89,7 @@ public:
         return true;
     }
 
-    bool Open(MediaParserHolder hParser) override
+    bool Open(MediaParser::Holder hParser) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!hParser || !hParser->IsOpened())
@@ -161,7 +162,7 @@ public:
         m_errMsg = "";
     }
 
-    bool GetSnapshots(double startPos, std::vector<ImageHolder>& images)
+    bool GetSnapshots(double startPos, vector<Image::Holder>& images)
     {
         images.clear();
         if (!IsOpened())
@@ -189,7 +190,7 @@ public:
         images.reserve(idx1-idx0+1);
         for (int32_t i = idx0; i <= idx1; i++)
         {
-            ImageHolder hIamge(new Image());
+            Image::Holder hIamge(new Image());
             hIamge->mTimestampMs = CalcSnapshotMts(i);
             images.push_back(hIamge);
         }
@@ -211,23 +212,14 @@ public:
         return true;
     }
 
-    MediaParserHolder GetMediaParser() const override
+    MediaParser::Holder GetMediaParser() const override
     {
         return m_hParser;
     }
 
-    ViewerHolder CreateViewer(double pos) override
-    {
-        lock_guard<recursive_mutex> lk(m_apiLock);
-        ViewerHolder hViewer(static_cast<Viewer*>(new Viewer_Impl(this, pos)));
-        {
-            lock_guard<mutex> lk(m_viewerListLock);
-            m_viewers.push_back(hViewer);
-        }
-        return hViewer;
-    }
+    Viewer::Holder CreateViewer(double pos) override;
 
-    void ReleaseViewer(ViewerHolder& viewer) override
+    void ReleaseViewer(Viewer::Holder& viewer) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         {
@@ -244,7 +236,7 @@ public:
         lock_guard<recursive_mutex> lk(m_apiLock);
         {
             lock_guard<mutex> lk(m_viewerListLock);
-            auto iter = find_if(m_viewers.begin(), m_viewers.end(), [viewer] (const ViewerHolder& hViewer) {
+            auto iter = find_if(m_viewers.begin(), m_viewers.end(), [viewer] (const Viewer::Holder& hViewer) {
                 return hViewer.get() == viewer;
             });
             if (iter != m_viewers.end())
@@ -415,30 +407,30 @@ public:
         return true;
     }
 
-    MediaInfo::InfoHolder GetMediaInfo() const override
+    MediaInfo::Holder GetMediaInfo() const override
     {
         return m_hMediaInfo;
     }
 
-    const MediaInfo::VideoStream* GetVideoStream() const override
+    const VideoStream* GetVideoStream() const override
     {
-        MediaInfo::InfoHolder hInfo = m_hMediaInfo;
+        MediaInfo::Holder hInfo = m_hMediaInfo;
         if (!hInfo || !HasVideo())
             return nullptr;
-        return dynamic_cast<MediaInfo::VideoStream*>(hInfo->streams[m_vidStmIdx].get());
+        return dynamic_cast<VideoStream*>(hInfo->streams[m_vidStmIdx].get());
     }
 
-    const MediaInfo::AudioStream* GetAudioStream() const override
+    const AudioStream* GetAudioStream() const override
     {
-        MediaInfo::InfoHolder hInfo = m_hMediaInfo;
+        MediaInfo::Holder hInfo = m_hMediaInfo;
         if (!hInfo || !HasAudio())
             return nullptr;
-        return dynamic_cast<MediaInfo::AudioStream*>(hInfo->streams[m_audStmIdx].get());
+        return dynamic_cast<AudioStream*>(hInfo->streams[m_audStmIdx].get());
     }
 
     uint32_t GetVideoWidth() const override
     {
-        const MediaInfo::VideoStream* vidStream = GetVideoStream();
+        const VideoStream* vidStream = GetVideoStream();
         if (vidStream)
             return vidStream->width;
         return 0;
@@ -446,7 +438,7 @@ public:
 
     uint32_t GetVideoHeight() const override
     {
-        const MediaInfo::VideoStream* vidStream = GetVideoStream();
+        const VideoStream* vidStream = GetVideoStream();
         if (vidStream)
             return vidStream->height;
         return 0;
@@ -531,7 +523,7 @@ private:
         return idx >= 0 && idx <= (int32_t)m_vidMaxIndex;
     }
 
-    bool OpenMedia(MediaParserHolder hParser)
+    bool OpenMedia(MediaParser::Holder hParser)
     {
         int fferr = avformat_open_input(&m_avfmtCtx, hParser->GetUrl().c_str(), nullptr, nullptr);
         if (fferr < 0)
@@ -552,15 +544,15 @@ private:
             return false;
         }
 
-        MediaInfo::VideoStream* vidStream = dynamic_cast<MediaInfo::VideoStream*>(m_hMediaInfo->streams[m_vidStmIdx].get());
+        VideoStream* vidStream = dynamic_cast<VideoStream*>(m_hMediaInfo->streams[m_vidStmIdx].get());
         m_vidStartMts = (int64_t)(vidStream->startTime*1000);
         m_vidDurMts = (int64_t)(vidStream->duration*1000);
         m_vidFrmCnt = vidStream->frameNum;
         AVRational timebase = { vidStream->timebase.num, vidStream->timebase.den };
         AVRational frameRate;
-        if (MediaInfo::IsRatioValid(vidStream->avgFrameRate))
+        if (Ratio::IsValid(vidStream->avgFrameRate))
             frameRate = { vidStream->avgFrameRate.num, vidStream->avgFrameRate.den };
-        else if (MediaInfo::IsRatioValid(vidStream->realFrameRate))
+        else if (Ratio::IsValid(vidStream->realFrameRate))
             frameRate = { vidStream->realFrameRate.num, vidStream->realFrameRate.den };
         else
             frameRate = av_inv_q(timebase);
@@ -1074,7 +1066,7 @@ private:
                                 for (auto& t : ssGopTasks)
                                 {
                                     m_logger->Log(DEBUG) << "Enqueue SS#" << ssIdx << ", pts=" << avfrm.pts << "(ts=" << MillisecToString(CvtVidPtsToMts(avfrm.pts))
-                                        << ") to GopDecodeTask: ssIdxPair=[" << t->m_range.SsIdx().first << ", " << t->m_range.SsIdx().second
+                                        << ") to _GopDecodeTask: ssIdxPair=[" << t->m_range.SsIdx().first << ", " << t->m_range.SsIdx().second
                                         << "), ptsPair=[" << t->m_range.SeekPts().first << ", " << t->m_range.SeekPts().second << ")." << endl;
                                 }
                                 if (!EnqueueSnapshotAVFrame(ssGopTasks, &avfrm, ssIdx, bias))
@@ -1165,7 +1157,7 @@ private:
             {
                 while (!currTask->ssAvfrmList.empty())
                 {
-                    SnapshotHolder ss;
+                    _Picture::Holder ss;
                     {
                         lock_guard<mutex> lk(currTask->ssAvfrmListLock);
                         ss = currTask->ssAvfrmList.front();
@@ -1225,10 +1217,10 @@ private:
     void StartAllThreads()
     {
         m_quit = false;
-        m_demuxThread = thread(&SnapshotGenerator_Impl::DemuxThreadProc, this);
+        m_demuxThread = thread(&Generator_Impl::DemuxThreadProc, this);
         if (HasVideo())
-            m_viddecThread = thread(&SnapshotGenerator_Impl::VideoDecodeThreadProc, this);
-        m_updateSsThread = thread(&SnapshotGenerator_Impl::UpdateSnapshotThreadProc, this);
+            m_viddecThread = thread(&Generator_Impl::VideoDecodeThreadProc, this);
+        m_updateSsThread = thread(&Generator_Impl::UpdateSnapshotThreadProc, this);
     }
 
     void WaitAllThreadsQuit()
@@ -1257,15 +1249,17 @@ private:
         m_goptskList.clear();
     }
 
-    struct Snapshot
+    struct _Picture
     {
-        Snapshot(SnapshotGenerator_Impl* owner, int32_t _index, AVFrame* _avfrm, uint32_t _bias)
+        using Holder = shared_ptr<_Picture>;
+
+        _Picture(Generator_Impl* owner, int32_t _index, AVFrame* _avfrm, uint32_t _bias)
             : m_owner(owner), img(new Image()), index(_index), avfrm(_avfrm), bias(_bias)
         {
             pts = _avfrm->pts;
         }
 
-        ~Snapshot()
+        ~_Picture()
         {
             if (avfrm)
             {
@@ -1279,17 +1273,16 @@ private:
             }
         }
 
-        SnapshotGenerator_Impl* m_owner;
-        ImageHolder img;
+        Generator_Impl* m_owner;
+        Image::Holder img;
         int32_t index;
         AVFrame* avfrm;
         int64_t pts;
         int64_t bias;
         bool fixed{false};
     };
-    using SnapshotHolder = shared_ptr<Snapshot>;
 
-    struct SnapWindow
+    struct _SnapWindow
     {
         double wndpos;
         int32_t viewIdx0;
@@ -1307,14 +1300,14 @@ private:
         { return pts >= seekPos00 && pts <= seekPos10; }
     };
 
-    struct SnapshotCandidate
+    struct _SnapshotCandidate
     {
         int64_t pts{INT64_MIN};
         uint32_t bias{UINT32_MAX};
         bool frmEnqueued{false};
     };
 
-    struct GopDecodeTask
+    struct _GopDecodeTask
     {
         class Range
         {
@@ -1339,7 +1332,7 @@ private:
                 bool e1 = oprnd1.m_seekPts.first == oprnd2.m_seekPts.first;
                 bool e2 = oprnd1.m_seekPts.second == oprnd2.m_seekPts.second;
                 if (e1^e2)
-                    GetSnapshotGeneratorLogger()->Log(Error) << "!!! GopDecodeTask::Range compare ABNORMAL! ("
+                    GetLogger()->Log(Error) << "!!! _GopDecodeTask::Range compare ABNORMAL! ("
                         << oprnd1.m_seekPts.first << ", " << oprnd1.m_seekPts.second << ") VS ("
                         << oprnd2.m_seekPts.first << ", " << oprnd2.m_seekPts.second << ")." << endl;
                 return e1 && e2;
@@ -1352,16 +1345,16 @@ private:
             bool m_isInView{false};
         };
 
-        GopDecodeTask(SnapshotGenerator_Impl* owner, const Range& range)
+        _GopDecodeTask(Generator_Impl* owner, const Range& range)
             : m_owner(owner), m_range(range)
         {
             int32_t idxBegin = range.SsIdx().first < 0 ? 0 : range.SsIdx().first;
             int32_t idxEnd = range.SsIdx().second > owner->m_vidMaxIndex+1 ? owner->m_vidMaxIndex+1 : range.SsIdx().second;
             for (int32_t ssIdx = idxBegin; ssIdx < idxEnd; ssIdx++)
-                ssCandidates[ssIdx] = SnapshotCandidate();
+                ssCandidates[ssIdx] = _SnapshotCandidate();
         }
 
-        ~GopDecodeTask()
+        ~_GopDecodeTask()
         {
             for (AVPacket* avpkt : avpktQ)
                 av_packet_free(&avpkt);
@@ -1373,13 +1366,13 @@ private:
         bool IsInView() const { return m_range.IsInView(); }
         int32_t DistanceToViewWnd() const { return m_range.DistanceToViewWindow(); }
 
-        SnapshotGenerator_Impl* m_owner;
+        Generator_Impl* m_owner;
         Range m_range;
-        unordered_map<int32_t, SnapshotCandidate> ssCandidates;
+        unordered_map<int32_t, _SnapshotCandidate> ssCandidates;
         bool isEndOfGop{true};
-        list<SnapshotHolder> ssAvfrmList;
+        list<_Picture::Holder> ssAvfrmList;
         mutex ssAvfrmListLock;
-        list<SnapshotHolder> ssImgList;
+        list<_Picture::Holder> ssImgList;
         // atomic_int32_t ssfrmCnt{0};
         list<AVPacket*> avpktQ;
         list<AVPacket*> avpktBkupQ;
@@ -1392,9 +1385,9 @@ private:
         bool decoderEof{false};
         bool cancel{false};
     };
-    using GopDecodeTaskHolder = shared_ptr<GopDecodeTask>;
+    using GopDecodeTaskHolder = shared_ptr<_GopDecodeTask>;
 
-    SnapWindow CreateSnapWindow(double wndpos)
+    _SnapWindow CreateSnapWindow(double wndpos)
     {
         if (!m_prepared)
             return { wndpos, -1, -1, -1, -1, INT64_MIN, INT64_MIN };
@@ -1412,7 +1405,7 @@ private:
         ssIdx = (int32_t)round((double)pts/m_ssIntvPts);
         bias = (uint32_t)floor(abs(m_ssIntvPts*ssIdx-pts));
         bool noEntry = true;
-        SnapshotCandidate bestCandTime;
+        _SnapshotCandidate bestCandTime;
         list<GopDecodeTaskHolder> tasks;
         {
             lock_guard<mutex> lk(m_goptskListReadLocks[0]);
@@ -1541,7 +1534,7 @@ private:
 
     void UpdateGopDecodeTaskList()
     {
-        list<ViewerHolder> viewers;
+        list<Viewer::Holder> viewers;
         {
             lock_guard<mutex> lk(m_viewerListLock);
             viewers = m_viewers;
@@ -1560,12 +1553,12 @@ private:
         if (!taskRangeChanged)
             return;
 
-        // Aggregate all GopDecodeTask::Range(s) from all the Viewer(s)
-        list<GopDecodeTask::Range> totalTaskRanges;
+        // Aggregate all _GopDecodeTask::Range(s) from all the Viewer(s)
+        list<_GopDecodeTask::Range> totalTaskRanges;
         for (auto& hViewer : viewers)
         {
             Viewer_Impl* viewer = dynamic_cast<Viewer_Impl*>(hViewer.get());
-            list<GopDecodeTask::Range> taskRanges = viewer->CheckTaskRanges();
+            list<_GopDecodeTask::Range> taskRanges = viewer->CheckTaskRanges();
             for (auto& tskrng : taskRanges)
             {
                 auto iter = find(totalTaskRanges.begin(), totalTaskRanges.end(), tskrng);
@@ -1580,14 +1573,14 @@ private:
             m_logger->Log(DEBUG) << "[" << range.SsIdx().first << ", " << range.SsIdx().second << "), ";
         m_logger->Log(DEBUG) << endl;
 
-        // Update GopDecodeTask prepare list
+        // Update _GopDecodeTask prepare list
         bool updated = false;
         // 1. remove the tasks that are no longer in the cache range
         auto taskIter = m_goptskPrepareList.begin();
         while (taskIter != m_goptskPrepareList.end())
         {
             auto& task = *taskIter;
-            auto iter = find_if(totalTaskRanges.begin(), totalTaskRanges.end(), [task] (const GopDecodeTask::Range& range) {
+            auto iter = find_if(totalTaskRanges.begin(), totalTaskRanges.end(), [task] (const _GopDecodeTask::Range& range) {
                 return task->m_range == range;
             });
             if (iter == totalTaskRanges.end())
@@ -1608,7 +1601,7 @@ private:
         // 2. add the tasks with newly created ranges
         for (auto& range : totalTaskRanges)
         {
-            GopDecodeTaskHolder hTask(new GopDecodeTask(this, range));
+            GopDecodeTaskHolder hTask(new _GopDecodeTask(this, range));
             m_goptskPrepareList.push_back(hTask);
             updated = true;
         }
@@ -1620,7 +1613,7 @@ private:
         }
         m_logger->Log(DEBUG) << "updated=" << updated << endl;
 
-        // Update GopDecodeTask list
+        // Update _GopDecodeTask list
         if (updated)
         {
             lock(m_goptskListReadLocks[0], m_goptskListReadLocks[1], m_goptskListReadLocks[2]);
@@ -1687,7 +1680,7 @@ private:
         }
         if (candidateTask && candidateTask->redoDecoding)
         {
-            m_logger->Log(DEBUG) << "---> REDO decoding on GopDecodeTask, ssIdxPair=["
+            m_logger->Log(DEBUG) << "---> REDO decoding on _GopDecodeTask, ssIdxPair=["
                     << candidateTask->m_range.SsIdx().first << ", " << candidateTask->m_range.SsIdx().second << "), ptsPair=["
                     << candidateTask->m_range.SeekPts().first << ", " << candidateTask->m_range.SeekPts().second << ")." << endl;
             for (auto& elem : candidateTask->ssCandidates)
@@ -1733,7 +1726,7 @@ private:
             m_logger->Log(Error) << "FAILED to invoke 'av_frame_clone()' to allocate new AVFrame for SS!" << endl;
             return false;
         }
-        SnapshotHolder ss(new Snapshot(this, ssIdx, _avfrm, bias));
+        _Picture::Holder ss(new _Picture(this, ssIdx, _avfrm, bias));
 
         bool ssAdopted = false;
         for (auto& t : ssGopTasks)
@@ -1777,7 +1770,7 @@ private:
                 t->allCandDecoded = allCandDecoded;
                 if (allCandDecoded)
                 {
-                    m_logger->Log(DEBUG) << "--> Set 'allCandDecoded' of GopDecodeTask:{ ssidx=[" << t->TaskRange().SsIdx().first << ", "
+                    m_logger->Log(DEBUG) << "--> Set 'allCandDecoded' of _GopDecodeTask:{ ssidx=[" << t->TaskRange().SsIdx().first << ", "
                         << t->TaskRange().SsIdx().second << "). Also set 'decoderEof'." << endl;
                     t->decoderEof = true;
                     t->demuxerEof = true;  // also stop demuxing task if it's not stopped already
@@ -1794,10 +1787,11 @@ private:
         return true;
     }
 
+public:
     class Viewer_Impl : public Viewer
     {
     public:
-        Viewer_Impl(SnapshotGenerator_Impl* owner, double wndpos)
+        Viewer_Impl(Generator_Impl* owner, double wndpos)
             : m_owner(owner)
         {
             m_logger = owner->m_logger;
@@ -1815,13 +1809,13 @@ private:
             return m_snapwnd.wndpos;
         }
 
-        bool GetSnapshots(double startPos, vector<SnapshotGenerator::ImageHolder>& snapshots) override
+        bool GetSnapshots(double startPos, vector<Image::Holder>& snapshots) override
         {
             UpdateSnapwnd(startPos);
             return m_owner->GetSnapshots(startPos, snapshots);
         }
 
-        ViewerHolder CreateViewer(double pos) override
+        Viewer::Holder CreateViewer(double pos) override
         {
             return m_owner->CreateViewer(pos);
         }
@@ -1831,7 +1825,7 @@ private:
             return m_owner->ReleaseViewer(this);
         }
 
-        MediaParserHolder GetMediaParser() const override
+        MediaParser::Holder GetMediaParser() const override
         {
             return m_owner->GetMediaParser();
         }
@@ -1841,7 +1835,7 @@ private:
             return m_owner->GetError();
         }
 
-        bool UpdateSnapshotTexture(vector<SnapshotGenerator::ImageHolder>& snapshots) override
+        bool UpdateSnapshotTexture(vector<Image::Holder>& snapshots) override
         {
             // free deprecated textures
             {
@@ -1869,18 +1863,18 @@ private:
 
         bool IsTaskRangeChanged() const { return m_taskRangeChanged; }
 
-        list<GopDecodeTask::Range> CheckTaskRanges()
+        list<_GopDecodeTask::Range> CheckTaskRanges()
         {
             lock_guard<mutex> lk(m_taskRangeLock);
-            list<GopDecodeTask::Range> taskRanges(m_taskRanges);
+            list<_GopDecodeTask::Range> taskRanges(m_taskRanges);
             m_taskRangeChanged = false;
             return std::move(taskRanges);
         }
 
         void UpdateSnapwnd(double wndpos, bool force = false)
         {
-            SnapWindow snapwnd = m_owner->CreateSnapWindow(wndpos);
-            list<GopDecodeTask::Range> taskRanges;
+            _SnapWindow snapwnd = m_owner->CreateSnapWindow(wndpos);
+            list<_GopDecodeTask::Range> taskRanges;
             bool taskRangeChanged = false;
             if ((force || snapwnd.viewIdx0 != m_snapwnd.viewIdx0 || snapwnd.viewIdx1 != m_snapwnd.viewIdx1) &&
                 (snapwnd.seekPos00 != INT64_MIN || snapwnd.seekPos10 != INT64_MIN))
@@ -1904,7 +1898,7 @@ private:
                     int32_t distanceToViewWnd = isInView ? 0 : (ssIdxPair.second <= snapwnd.viewIdx0 ?
                             snapwnd.viewIdx0-ssIdxPair.second : ssIdxPair.first-snapwnd.viewIdx1);
                     if (distanceToViewWnd < 0) distanceToViewWnd = -distanceToViewWnd;
-                    taskRanges.push_back(GopDecodeTask::Range(ptsPair, ssIdxPair, isInView, distanceToViewWnd));
+                    taskRanges.push_back(_GopDecodeTask::Range(ptsPair, ssIdxPair, isInView, distanceToViewWnd));
                     buildIdx0 = ssIdxPair.second;
                 }
                 taskRangeChanged = true;
@@ -1934,9 +1928,9 @@ private:
 
     private:
         ALogger* m_logger;
-        SnapshotGenerator_Impl* m_owner;
-        SnapWindow m_snapwnd;
-        list<GopDecodeTask::Range> m_taskRanges;
+        Generator_Impl* m_owner;
+        _SnapWindow m_snapwnd;
+        list<_GopDecodeTask::Range> m_taskRanges;
         mutex m_taskRangeLock;
         bool m_taskRangeChanged{false};
     };
@@ -1945,8 +1939,8 @@ private:
     ALogger* m_logger;
     string m_errMsg;
 
-    MediaParserHolder m_hParser;
-    MediaInfo::InfoHolder m_hMediaInfo;
+    MediaParser::Holder m_hParser;
+    MediaInfo::Holder m_hMediaInfo;
     MediaParser::SeekPointsHolder m_hSeekPoints;
     bool m_opened{false};
     bool m_prepared{false};
@@ -1990,7 +1984,7 @@ private:
     double m_cacheFactor{10.0};
     uint32_t m_maxCacheSize{0};
     uint32_t m_prevWndCacheSize;
-    list<ViewerHolder> m_viewers;
+    list<Viewer::Holder> m_viewers;
     mutex m_viewerListLock;
     list<GopDecodeTaskHolder> m_goptskPrepareList;
     list<GopDecodeTaskHolder> m_goptskList;
@@ -2007,18 +2001,41 @@ private:
     AVFrameToImMatConverter m_frmCvt;
 };
 
-ALogger* SnapshotGenerator_Impl::s_logger = nullptr;
+static const auto SNAPSHOT_VIEWER_HOLDER_DELETER = [] (Viewer* p) {
+    Generator_Impl::Viewer_Impl* ptr = dynamic_cast<Generator_Impl::Viewer_Impl*>(p);
+    delete ptr;
+};
 
-ALogger* GetSnapshotGeneratorLogger()
+Viewer::Holder Generator_Impl::CreateViewer(double pos)
 {
-    if (!SnapshotGenerator_Impl::s_logger)
-        SnapshotGenerator_Impl::s_logger = GetLogger("MSnapshotGenerator");
-    return SnapshotGenerator_Impl::s_logger;
+    lock_guard<recursive_mutex> lk(m_apiLock);
+    Viewer::Holder hViewer(static_cast<Viewer*>(new Viewer_Impl(this, pos)), SNAPSHOT_VIEWER_HOLDER_DELETER);
+    {
+        lock_guard<mutex> lk(m_viewerListLock);
+        m_viewers.push_back(hViewer);
+    }
+    return hViewer;
+}
+
+Generator::Holder Generator::CreateInstance()
+{
+    return Generator::Holder(static_cast<Generator*>(new Generator_Impl()), [] (Generator* p) {
+        Generator_Impl* ptr = dynamic_cast<Generator_Impl*>(p);
+        ptr->Close();
+        delete ptr;
+    });
+}
+
+ALogger* GetLogger()
+{
+    return Logger::GetLogger("Snapshot");
+}
+}
 }
 
 static AVPixelFormat get_hw_format(AVCodecContext *ctx, const AVPixelFormat *pix_fmts)
 {
-    SnapshotGenerator_Impl* ms = reinterpret_cast<SnapshotGenerator_Impl*>(ctx->opaque);
+    MediaCore::Snapshot::Generator_Impl* ms = reinterpret_cast<MediaCore::Snapshot::Generator_Impl*>(ctx->opaque);
     const AVPixelFormat *p;
     AVPixelFormat candidateSwfmt = AV_PIX_FMT_NONE;
     for (p = pix_fmts; *p != AV_PIX_FMT_NONE; p++) {
@@ -2032,13 +2049,4 @@ static AVPixelFormat get_hw_format(AVCodecContext *ctx, const AVPixelFormat *pix
             return *p;
     }
     return candidateSwfmt;
-}
-
-SnapshotGeneratorHolder CreateSnapshotGenerator()
-{
-    return SnapshotGeneratorHolder(static_cast<SnapshotGenerator*>(new SnapshotGenerator_Impl()), [] (SnapshotGenerator* ssgen) {
-        SnapshotGenerator_Impl* ssgenimpl = dynamic_cast<SnapshotGenerator_Impl*>(ssgen);
-        ssgenimpl->Close();
-        delete ssgenimpl;
-    });
 }

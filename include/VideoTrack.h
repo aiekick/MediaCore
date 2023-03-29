@@ -24,67 +24,41 @@
 
 namespace MediaCore
 {
-    class VideoTrack;
-    using VideoTrackHolder = std::shared_ptr<VideoTrack>;
+struct VideoTrack
+{
+    using Holder = std::shared_ptr<VideoTrack>;
+    static MEDIACORE_API Holder CreateInstance(int64_t id, uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate);
 
-    class MEDIACORE_API VideoTrack
-    {
-    public:
-        VideoTrack(int64_t id, uint32_t outWidth, uint32_t outHeight, const MediaInfo::Ratio& frameRate);
-        VideoTrack(const VideoTrack&) = delete;
-        VideoTrack(VideoTrack&&) = delete;
-        VideoTrack& operator=(const VideoTrack&) = delete;
-        VideoTrackHolder Clone(uint32_t outWidth, uint32_t outHeight, const MediaInfo::Ratio& frameRate);
+    virtual Holder Clone(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) = 0;
+    virtual VideoClip::Holder AddNewClip(int64_t clipId, MediaParser::Holder hParser, int64_t start, int64_t startOffset, int64_t endOffset, int64_t readPos) = 0;
+    virtual void InsertClip(VideoClip::Holder hClip) = 0;
+    virtual void MoveClip(int64_t id, int64_t start) = 0;
+    virtual void ChangeClipRange(int64_t id, int64_t startOffset, int64_t endOffset) = 0;
+    virtual VideoClip::Holder RemoveClipById(int64_t clipId) = 0;
+    virtual VideoClip::Holder RemoveClipByIndex(uint32_t index) = 0;
 
-        VideoClipHolder AddNewClip(int64_t clipId, MediaParserHolder hParser, int64_t start, int64_t startOffset, int64_t endOffset, int64_t readPos);
-        void InsertClip(VideoClipHolder hClip);
-        void MoveClip(int64_t id, int64_t start);
-        void ChangeClipRange(int64_t id, int64_t startOffset, int64_t endOffset);
-        VideoClipHolder RemoveClipById(int64_t clipId);
-        VideoClipHolder RemoveClipByIndex(uint32_t index);
+    virtual VideoClip::Holder GetClipByIndex(uint32_t index) = 0;
+    virtual VideoClip::Holder GetClipById(int64_t id) = 0;
+    virtual VideoOverlap::Holder GetOverlapById(int64_t id) = 0;
+    virtual uint32_t ClipCount() const = 0;
+    virtual std::list<VideoClip::Holder>::iterator ClipListBegin() = 0;
+    virtual std::list<VideoClip::Holder>::iterator ClipListEnd() = 0;
+    virtual uint32_t OverlapCount() const = 0;
+    virtual std::list<VideoOverlap::Holder>::iterator OverlapListBegin() = 0;
+    virtual std::list<VideoOverlap::Holder>::iterator OverlapListEnd() = 0;
 
-        VideoClipHolder GetClipByIndex(uint32_t index);
-        VideoClipHolder GetClipById(int64_t id);
-        VideoOverlapHolder GetOverlapById(int64_t id);
-        uint32_t ClipCount() const { return m_clips.size(); }
-        std::list<VideoClipHolder>::iterator ClipListBegin() { return m_clips.begin(); }
-        std::list<VideoClipHolder>::iterator ClipListEnd() { return m_clips.end(); }
-        uint32_t OverlapCount() const { return m_overlaps.size(); }
-        std::list<VideoOverlapHolder>::iterator OverlapListBegin() { return m_overlaps.begin(); }
-        std::list<VideoOverlapHolder>::iterator OverlapListEnd() { return m_overlaps.end(); }
+    virtual void SeekTo(int64_t pos) = 0;
+    virtual void ReadVideoFrame(std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out) = 0;
+    virtual void SetDirection(bool forward) = 0;
 
-        void SeekTo(int64_t pos);
-        void ReadVideoFrame(std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out);
-        void SetDirection(bool forward);
+    virtual int64_t Id() const = 0;
+    virtual uint32_t OutWidth() const = 0;
+    virtual uint32_t OutHeight() const = 0;
+    virtual Ratio FrameRate() const = 0;
+    virtual int64_t Duration() const = 0;
+    virtual int64_t ReadPos() const = 0;
+    virtual bool Direction() const = 0;
+};
 
-        int64_t Id() const { return m_id; }
-        uint32_t OutWidth() const { return m_outWidth; }
-        uint32_t OutHeight() const { return m_outHeight; }
-        MediaInfo::Ratio FrameRate() const { return m_frameRate; }
-        int64_t Duration() const { return m_duration; }
-        int64_t ReadPos() const { return (int64_t)((double)m_readFrames*1000*m_frameRate.den/m_frameRate.num); }
-        bool Direction() const { return m_readForward; }
-
-        friend MEDIACORE_API std::ostream& operator<<(std::ostream& os, VideoTrack& track);
-
-    private:
-        static std::function<bool(const VideoClipHolder&, const VideoClipHolder&)> CLIP_SORT_CMP;
-        static std::function<bool(const VideoOverlapHolder&, const VideoOverlapHolder&)> OVERLAP_SORT_CMP;
-        bool CheckClipRangeValid(int64_t clipId, int64_t start, int64_t end);
-        void UpdateClipOverlap(VideoClipHolder hClip, bool remove = false);
-
-    private:
-        std::recursive_mutex m_apiLock;
-        int64_t m_id;
-        uint32_t m_outWidth;
-        uint32_t m_outHeight;
-        MediaInfo::Ratio m_frameRate;
-        std::list<VideoClipHolder> m_clips;
-        std::list<VideoClipHolder>::iterator m_readClipIter;
-        std::list<VideoOverlapHolder> m_overlaps;
-        std::list<VideoOverlapHolder>::iterator m_readOverlapIter;
-        int64_t m_readFrames{0};
-        int64_t m_duration{0};
-        bool m_readForward{true};
-    };
+MEDIACORE_API std::ostream& operator<<(std::ostream& os, VideoTrack::Holder hTrack);
 }

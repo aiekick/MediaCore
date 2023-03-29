@@ -40,23 +40,20 @@ extern "C"
 
 using namespace std;
 using namespace Logger;
-using namespace MediaCore;
 
+namespace MediaCore
+{
 class MultiTrackAudioReader_Impl : public MultiTrackAudioReader
 {
 public:
-    static ALogger* s_logger;
-
     MultiTrackAudioReader_Impl()
     {
-        m_logger = GetMultiTrackAudioReaderLogger();
+        m_logger = MultiTrackAudioReader::GetLogger();
     }
 
     MultiTrackAudioReader_Impl(const MultiTrackAudioReader_Impl&) = delete;
     MultiTrackAudioReader_Impl(MultiTrackAudioReader_Impl&&) = delete;
     MultiTrackAudioReader_Impl& operator=(const MultiTrackAudioReader_Impl&) = delete;
-
-    virtual ~MultiTrackAudioReader_Impl() {}
 
     bool Configure(uint32_t outChannels, uint32_t outSampleRate, uint32_t outSamplesPerFrame) override
     {
@@ -84,7 +81,7 @@ public:
         m_matAvfrmCvter = new AudioImMatAVFrameConverter();
         m_mixOutDataType = GetDataTypeFromSampleFormat(m_mixOutSmpfmt);
 
-        m_aeFilter = CreateAudioEffectFilter("AEFilter#mix");
+        m_aeFilter = AudioEffectFilter::CreateInstance("AEFilter#mix");
         if (!m_aeFilter->Init(
             AudioEffectFilter::VOLUME|AudioEffectFilter::COMPRESSOR|AudioEffectFilter::GATE|AudioEffectFilter::EQUALIZER|AudioEffectFilter::LIMITER|AudioEffectFilter::PAN,
             av_get_sample_fmt_name(m_mixOutSmpfmt), outChannels, outSampleRate))
@@ -97,48 +94,7 @@ public:
         return true;
     }
 
-    MultiTrackAudioReader* CloneAndConfigure(uint32_t outChannels, uint32_t outSampleRate, uint32_t outSamplesPerFrame) override
-    {
-        lock_guard<recursive_mutex> lk(m_apiLock);
-        MultiTrackAudioReader_Impl* newInstance = new MultiTrackAudioReader_Impl();
-        if (!newInstance->Configure(outChannels, outSampleRate, outSamplesPerFrame))
-        {
-            m_errMsg = newInstance->GetError();
-            newInstance->Close(); delete newInstance;
-            return nullptr;
-        }
-
-        lock_guard<recursive_mutex> lk2(m_trackLock);
-        // clone all the tracks
-        for (auto track : m_tracks)
-        {
-            newInstance->m_tracks.push_back(track->Clone(outChannels, outSampleRate, av_get_sample_fmt_name(m_trackOutSmpfmt)));
-        }
-        newInstance->UpdateDuration();
-        // create mixer in the new instance
-        if (!newInstance->CreateMixer())
-        {
-            m_errMsg = newInstance->GetError();
-            newInstance->Close(); delete newInstance;
-            return nullptr;
-        }
-
-        // seek to 0
-        newInstance->m_outputMats.clear();
-        newInstance->m_samplePos = 0;
-        newInstance->m_readPos = 0;
-        for (auto track : newInstance->m_tracks)
-            track->SeekTo(0);
-
-        // start new instance
-        if (!newInstance->Start())
-        {
-            m_errMsg = newInstance->GetError();
-            newInstance->Close(); delete newInstance;
-            return nullptr;
-        }
-        return newInstance;
-    }
+    Holder CloneAndConfigure(uint32_t outChannels, uint32_t outSampleRate, uint32_t outSamplesPerFrame) override;
 
     bool Start() override
     {
@@ -183,7 +139,7 @@ public:
         }
     }
 
-    AudioTrackHolder AddTrack(int64_t trackId) override
+    AudioTrack::Holder AddTrack(int64_t trackId) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_started)
@@ -200,7 +156,7 @@ public:
 #else
         outChannels = m_outChlyt.nb_channels;
 #endif
-        AudioTrackHolder hTrack = CreateAudioTrack(trackId, outChannels, m_outSampleRate, av_get_sample_fmt_name(m_trackOutSmpfmt));
+        AudioTrack::Holder hTrack = AudioTrack::CreateInstance(trackId, outChannels, m_outSampleRate, av_get_sample_fmt_name(m_trackOutSmpfmt));
         hTrack->SetDirection(m_readForward);
         {
             lock_guard<recursive_mutex> lk2(m_trackLock);
@@ -220,7 +176,7 @@ public:
         return hTrack;
     }
 
-    AudioTrackHolder RemoveTrackByIndex(uint32_t index) override
+    AudioTrack::Holder RemoveTrackByIndex(uint32_t index) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_started)
@@ -236,7 +192,7 @@ public:
 
         TerminateMixingThread();
 
-        AudioTrackHolder delTrack;
+        AudioTrack::Holder delTrack;
         {
             lock_guard<recursive_mutex> lk2(m_trackLock);
             auto iter = m_tracks.begin();
@@ -267,7 +223,7 @@ public:
         return delTrack;
     }
 
-    AudioTrackHolder RemoveTrackById(int64_t trackId) override
+    AudioTrack::Holder RemoveTrackById(int64_t trackId) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_started)
@@ -278,10 +234,10 @@ public:
 
         TerminateMixingThread();
 
-        AudioTrackHolder delTrack;
+        AudioTrack::Holder delTrack;
         {
             lock_guard<recursive_mutex> lk2(m_trackLock);
-            auto iter = find_if(m_tracks.begin(), m_tracks.end(), [trackId] (const AudioTrackHolder& track) {
+            auto iter = find_if(m_tracks.begin(), m_tracks.end(), [trackId] (const AudioTrack::Holder& track) {
                 return track->Id() == trackId;
             });
             if (iter != m_tracks.end())
@@ -442,17 +398,17 @@ public:
         return m_tracks.size();
     }
 
-    list<AudioTrackHolder>::iterator TrackListBegin() override
+    list<AudioTrack::Holder>::iterator TrackListBegin() override
     {
         return m_tracks.begin();
     }
 
-    list<AudioTrackHolder>::iterator TrackListEnd() override
+    list<AudioTrack::Holder>::iterator TrackListEnd() override
     {
         return m_tracks.end();
     }
 
-    AudioTrackHolder GetTrackByIndex(uint32_t idx) override
+    AudioTrack::Holder GetTrackByIndex(uint32_t idx) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (idx >= m_tracks.size())
@@ -464,12 +420,12 @@ public:
         return iter != m_tracks.end() ? *iter : nullptr;
     }
 
-    AudioTrackHolder GetTrackById(int64_t id, bool createIfNotExists) override
+    AudioTrack::Holder GetTrackById(int64_t id, bool createIfNotExists) override
     {
         lock(m_apiLock, m_trackLock);
         lock_guard<recursive_mutex> lk(m_apiLock, adopt_lock);
         lock_guard<recursive_mutex> lk2(m_trackLock, adopt_lock);
-        auto iter = find_if(m_tracks.begin(), m_tracks.end(), [id] (const AudioTrackHolder& track) {
+        auto iter = find_if(m_tracks.begin(), m_tracks.end(), [id] (const AudioTrack::Holder& track) {
             return track->Id() == id;
         });
         if (iter != m_tracks.end())
@@ -480,12 +436,12 @@ public:
             return nullptr;
     }
 
-    AudioClipHolder GetClipById(int64_t clipId) override
+    AudioClip::Holder GetClipById(int64_t clipId) override
     {
         lock(m_apiLock, m_trackLock);
         lock_guard<recursive_mutex> lk(m_apiLock, adopt_lock);
         lock_guard<recursive_mutex> lk2(m_trackLock, adopt_lock);
-        AudioClipHolder clip;
+        AudioClip::Holder clip;
         for (auto& track : m_tracks)
         {
             clip = track->GetClipById(clipId);
@@ -495,12 +451,12 @@ public:
         return clip;
     }
 
-    AudioOverlapHolder GetOverlapById(int64_t ovlpId) override
+    AudioOverlap::Holder GetOverlapById(int64_t ovlpId) override
     {
         lock(m_apiLock, m_trackLock);
         lock_guard<recursive_mutex> lk(m_apiLock, adopt_lock);
         lock_guard<recursive_mutex> lk2(m_trackLock, adopt_lock);
-        AudioOverlapHolder ovlp;
+        AudioOverlap::Holder ovlp;
         for (auto& track : m_tracks)
         {
             ovlp = track->GetOverlapById(ovlpId);
@@ -510,7 +466,7 @@ public:
         return ovlp;
     }
 
-    AudioEffectFilterHolder GetAudioEffectFilter() override
+    AudioEffectFilter::Holder GetAudioEffectFilter() override
     {
         return m_aeFilter;
     }
@@ -828,7 +784,7 @@ private:
     AVSampleFormat m_mixOutSmpfmt{AV_SAMPLE_FMT_FLT};
     ImDataType m_mixOutDataType;
 
-    list<AudioTrackHolder> m_tracks;
+    list<AudioTrack::Holder> m_tracks;
     recursive_mutex m_trackLock;
     int64_t m_duration{0};
     int64_t m_samplePos{0};
@@ -862,29 +818,79 @@ private:
     vector<AVFilterContext*> m_bufSrcCtxs;
     vector<AVFilterContext*> m_bufSinkCtxs;
 
-    AudioEffectFilterHolder m_aeFilter;
+    AudioEffectFilter::Holder m_aeFilter;
 };
 
-ALogger* MultiTrackAudioReader_Impl::s_logger;
+static const auto MULTI_TRACK_AUDIO_READER_DELETER = [] (MultiTrackAudioReader* p) {
+    MultiTrackAudioReader_Impl* ptr = dynamic_cast<MultiTrackAudioReader_Impl*>(p);
+    ptr->Close();
+    delete ptr;
+};
 
-ALogger* GetMultiTrackAudioReaderLogger()
+MultiTrackAudioReader::Holder MultiTrackAudioReader::CreateInstance()
 {
-    if (!MultiTrackAudioReader_Impl::s_logger)
-        MultiTrackAudioReader_Impl::s_logger = GetLogger("MTAReader");
-    return MultiTrackAudioReader_Impl::s_logger;
+    return MultiTrackAudioReader::Holder(new MultiTrackAudioReader_Impl(), MULTI_TRACK_AUDIO_READER_DELETER);
 }
 
-MultiTrackAudioReader* CreateMultiTrackAudioReader()
+MultiTrackAudioReader::Holder MultiTrackAudioReader_Impl::CloneAndConfigure(uint32_t outChannels, uint32_t outSampleRate, uint32_t outSamplesPerFrame)
 {
-    return new MultiTrackAudioReader_Impl();
+    lock_guard<recursive_mutex> lk(m_apiLock);
+    MultiTrackAudioReader_Impl* newInstance = new MultiTrackAudioReader_Impl();
+    if (!newInstance->Configure(outChannels, outSampleRate, outSamplesPerFrame))
+    {
+        m_errMsg = newInstance->GetError();
+        newInstance->Close(); delete newInstance;
+        return nullptr;
+    }
+
+    lock_guard<recursive_mutex> lk2(m_trackLock);
+    // clone all the tracks
+    for (auto track : m_tracks)
+    {
+        newInstance->m_tracks.push_back(track->Clone(outChannels, outSampleRate, av_get_sample_fmt_name(m_trackOutSmpfmt)));
+    }
+    newInstance->UpdateDuration();
+    // create mixer in the new instance
+    if (!newInstance->CreateMixer())
+    {
+        m_errMsg = newInstance->GetError();
+        newInstance->Close(); delete newInstance;
+        return nullptr;
+    }
+
+    // seek to 0
+    newInstance->m_outputMats.clear();
+    newInstance->m_samplePos = 0;
+    newInstance->m_readPos = 0;
+    for (auto track : newInstance->m_tracks)
+        track->SeekTo(0);
+
+    // start new instance
+    if (!newInstance->Start())
+    {
+        m_errMsg = newInstance->GetError();
+        newInstance->Close(); delete newInstance;
+        return nullptr;
+    }
+    return MultiTrackAudioReader::Holder(newInstance, MULTI_TRACK_AUDIO_READER_DELETER);
 }
 
-void ReleaseMultiTrackAudioReader(MultiTrackAudioReader** mreader)
+ALogger* MultiTrackAudioReader::GetLogger()
 {
-    if (mreader == nullptr || *mreader == nullptr)
-        return;
-    MultiTrackAudioReader_Impl* mtar = dynamic_cast<MultiTrackAudioReader_Impl*>(*mreader);
-    mtar->Close();
-    delete mtar;
-    *mreader = nullptr;
+    return Logger::GetLogger("MTAReader");
+}
+
+ostream& operator<<(ostream& os, MultiTrackAudioReader::Holder hMtaReader)
+{
+    os << ">>> MultiTrackAudioReader :" << endl;
+    auto trackIter = hMtaReader->TrackListBegin();
+    while (trackIter != hMtaReader->TrackListEnd())
+    {
+        auto& track = *trackIter;
+        os << "\t Track#" << track->Id() << " : " << track << endl;
+        trackIter++;
+    }
+    os << "<<< [END]MultiTrackAudioReader";
+    return os;
+}
 }

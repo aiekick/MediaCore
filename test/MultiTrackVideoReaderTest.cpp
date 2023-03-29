@@ -24,11 +24,11 @@ using Clock = chrono::steady_clock;
 
 static atomic_int64_t g_idIndex{1};
 
-static MultiTrackVideoReader* g_mtVidReader = nullptr;
+static MultiTrackVideoReader::Holder g_mtVidReader;
 static SubtitleTrackHolder g_subtrk;
 const int c_videoOutputWidth = 960;
 const int c_videoOutputHeight = 660;
-const MediaInfo::Ratio c_videoFrameRate = { 25, 1 };
+const Ratio c_videoFrameRate = { 25, 1 };
 
 static double g_playStartPos = 0.f;
 static Clock::time_point g_playStartTp;
@@ -61,7 +61,7 @@ static void MultiTrackVideoReader_Initialize(void** handle)
 {
     GetDefaultLogger()
         ->SetShowLevels(DEBUG);
-    GetMultiTrackVideoReaderLogger()
+    MultiTrackVideoReader::GetLogger()
         ->SetShowLevels(DEBUG);
     GetSubtitleTrackLogger()
         ->SetShowLevels(DEBUG);
@@ -85,14 +85,14 @@ static void MultiTrackVideoReader_Initialize(void** handle)
 
     InitializeSubtitleLibrary();
 
-    g_mtVidReader = CreateMultiTrackVideoReader();
+    g_mtVidReader = MultiTrackVideoReader::CreateInstance();
     g_mtVidReader->Configure(c_videoOutputWidth, c_videoOutputHeight, c_videoFrameRate);
     g_mtVidReader->Start();
 }
 
 static void MultiTrackVideoReader_Finalize(void** handle)
 {
-    ReleaseMultiTrackVideoReader(&g_mtVidReader);
+    g_mtVidReader = nullptr;
 
     ReleaseSubtitleLibrary();
 
@@ -196,7 +196,7 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
         vector<string> clipNames;
         if (!noTrack)
         {
-            VideoTrackHolder hTrack = g_mtVidReader->GetTrackByIndex(s_clipOpTrackSelIdx);
+            VideoTrack::Holder hTrack = g_mtVidReader->GetTrackByIndex(s_clipOpTrackSelIdx);
             auto clipIter = hTrack->ClipListBegin();
             while (clipIter != hTrack->ClipListEnd())
             {
@@ -233,7 +233,7 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
         ImGui::BeginDisabled(noClip);
         if (ImGui::Button("Remove Clip"))
         {
-            VideoTrackHolder hTrack = g_mtVidReader->GetTrackByIndex(s_clipOpTrackSelIdx);
+            VideoTrack::Holder hTrack = g_mtVidReader->GetTrackByIndex(s_clipOpTrackSelIdx);
             hTrack->RemoveClipByIndex(s_clipOpClipSelIdx);
             g_mtVidReader->Refresh();
             s_clipOpClipSelIdx = 0;
@@ -249,8 +249,8 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
         ImGui::BeginDisabled(noClip);
         if (ImGui::Button("Move Clip"))
         {
-            VideoTrackHolder hTrack = g_mtVidReader->GetTrackByIndex(s_clipOpTrackSelIdx);
-            VideoClipHolder hClip = hTrack->GetClipByIndex(s_clipOpClipSelIdx);
+            VideoTrack::Holder hTrack = g_mtVidReader->GetTrackByIndex(s_clipOpTrackSelIdx);
+            VideoClip::Holder hClip = hTrack->GetClipByIndex(s_clipOpClipSelIdx);
             hTrack->MoveClip(hClip->Id(), (int64_t)(s_changeClipStart*1000));
             g_mtVidReader->Refresh();
         }
@@ -269,8 +269,8 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
         ImGui::BeginDisabled(noClip);
         if (ImGui::Button("Change Clip Range"))
         {
-            VideoTrackHolder hTrack = g_mtVidReader->GetTrackByIndex(s_clipOpTrackSelIdx);
-            VideoClipHolder hClip = hTrack->GetClipByIndex(s_clipOpClipSelIdx);
+            VideoTrack::Holder hTrack = g_mtVidReader->GetTrackByIndex(s_clipOpTrackSelIdx);
+            VideoClip::Holder hClip = hTrack->GetClipByIndex(s_clipOpClipSelIdx);
             hTrack->ChangeClipRange(hClip->Id(), (int64_t)(s_changeClipStartOffset*1000), (int64_t)(s_changeClipEndOffset*1000));
             g_mtVidReader->Refresh();
         }
@@ -279,11 +279,11 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
         // control line #3
         ImGui::Spacing();
         ImGui::PushItemWidth(200);
-        VideoClipHolder selectedClip;
+        VideoClip::Holder selectedClip;
         VideoTransformFilterHolder fftransFilter;
         if (!noClip)
         {
-            VideoTrackHolder hTrack = g_mtVidReader->GetTrackByIndex(s_clipOpTrackSelIdx);
+            VideoTrack::Holder hTrack = g_mtVidReader->GetTrackByIndex(s_clipOpTrackSelIdx);
             selectedClip = hTrack->GetClipByIndex(s_clipOpClipSelIdx);
             fftransFilter = selectedClip->GetTransformFilter();
         }
@@ -603,13 +603,13 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
                     Log(Error) << "FAILED to 'AddTrack'! Message is '" << g_mtVidReader->GetError() << "'." << endl;
                 }
             }
-            VideoTrackHolder hTrack = g_mtVidReader->GetTrackByIndex(s_addClipOptSelIdx);
-            MediaParserHolder hParser = CreateMediaParser();
+            VideoTrack::Holder hTrack = g_mtVidReader->GetTrackByIndex(s_addClipOptSelIdx);
+            MediaParser::Holder hParser = MediaParser::CreateInstance();
             if (!hParser->Open(filePathName))
                 throw std::runtime_error(hParser->GetError());
             int64_t clipId = g_idIndex++;
             auto vidstream = hParser->GetBestVideoStream();
-            VideoClipHolder hClip;
+            VideoClip::Holder hClip;
             if (vidstream->isImage)
             {
                 int64_t duration = (int64_t)(s_addClipStartOffset*1000);

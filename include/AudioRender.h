@@ -48,9 +48,8 @@ struct AudioRender
 
     virtual std::string GetError() const = 0;
 
-    MEDIACORE_API static uint8_t GetBytesPerSampleByFormat(PcmFormat format);
+    static MEDIACORE_API uint8_t GetBytesPerSampleByFormat(PcmFormat format);
+    static MEDIACORE_API AudioRender* CreateInstance();
+    static MEDIACORE_API void ReleaseInstance(AudioRender** audrnd);
 };
-
-MEDIACORE_API AudioRender* CreateAudioRender();
-MEDIACORE_API void ReleaseAudioRender(AudioRender** audrnd);
 }

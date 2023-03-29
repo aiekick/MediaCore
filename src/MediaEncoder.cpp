@@ -41,14 +41,14 @@ extern "C"
 using namespace std;
 using namespace Logger;
 
+namespace MediaCore
+{
 class MediaEncoder_Impl : public MediaEncoder
 {
 public:
-    static ALogger* s_logger;
-
     MediaEncoder_Impl()
     {
-        m_logger = GetMediaEncoderLogger();
+        m_logger = MediaEncoder::GetLogger();
     }
 
     MediaEncoder_Impl(const MediaEncoder_Impl&) = delete;
@@ -102,7 +102,7 @@ public:
 
     bool ConfigureVideoStream(const std::string& codecName,
             string& imageFormat, uint32_t width, uint32_t height,
-            const MediaInfo::Ratio& frameRate, uint64_t bitRate,
+            const Ratio& frameRate, uint64_t bitRate,
             vector<Option>* extraOpts = nullptr) override
     {
         if (!m_opened)
@@ -432,7 +432,7 @@ public:
         return m_audStmIdx >= 0;
     }
 
-    MediaInfo::Ratio GetVideoFrameRate() const override
+    Ratio GetVideoFrameRate() const override
     {
         if (!m_videncCtx)
             return {0, 0};
@@ -492,7 +492,7 @@ private:
 
     bool ConfigureVideoStream_Internal(const std::string& codecName,
             string& imageFormat, uint32_t width, uint32_t height,
-            const MediaInfo::Ratio& frameRate, uint64_t bitRate,
+            const Ratio& frameRate, uint64_t bitRate,
             vector<Option>* extraOpts)
     {
         AVPixelFormat requiredInputPixfmt = AV_PIX_FMT_NONE;
@@ -689,7 +689,7 @@ private:
     }
 
     bool OpenVideoEncoder(AVCodecPtr videnc, AVCodecContext** ppVidencCtx, AVBufferRef** ppHwDevCtx,
-            uint32_t width, uint32_t height, const MediaInfo::Ratio& frameRate, uint64_t bitRate,
+            uint32_t width, uint32_t height, const Ratio& frameRate, uint64_t bitRate,
             vector<Option>* extraOpts, AVPixelFormat requiredInputPixfmt, bool bGlobalHeader)
     {
         if (ppHwDevCtx) *ppHwDevCtx = nullptr;
@@ -1346,28 +1346,20 @@ private:
     bool m_muxEof{false};
 };
 
-ALogger* MediaEncoder_Impl::s_logger;
+static const auto MEDIA_ENCODER_HOLDER_DELETER = [] (MediaEncoder* p) {
+    MediaEncoder_Impl* ptr = dynamic_cast<MediaEncoder_Impl*>(p);
+    ptr->Close();
+    delete ptr;
+};
 
-ALogger* GetMediaEncoderLogger()
+MediaEncoder::Holder MediaEncoder::CreateInstance()
 {
-    if (!MediaEncoder_Impl::s_logger)
-        MediaEncoder_Impl::s_logger = GetLogger("MEncoder");
-    return MediaEncoder_Impl::s_logger;
+    return MediaEncoder::Holder(new MediaEncoder_Impl(), MEDIA_ENCODER_HOLDER_DELETER);
 }
 
-MediaEncoder* CreateMediaEncoder()
+ALogger* MediaEncoder::GetLogger()
 {
-    return new MediaEncoder_Impl();
-}
-
-void ReleaseMediaEncoder(MediaEncoder** menc)
-{
-    if (menc == nullptr || *menc == nullptr)
-        return;
-    MediaEncoder_Impl* mencoder = dynamic_cast<MediaEncoder_Impl*>(*menc);
-    mencoder->Close();
-    delete mencoder;
-    *menc = nullptr;
+    return Logger::GetLogger("MEncoder");
 }
 
 ostream& operator<<(ostream& os, const MediaEncoder::Option::Value& val)
@@ -1440,12 +1432,12 @@ ostream& operator<<(ostream& os, const MediaEncoder::Option::Description& optdes
     return os;
 }
 
-ostream& operator<<(ostream& os, const MediaEncoder::EncoderDescription& encdesc)
+ostream& operator<<(ostream& os, const MediaEncoder::Description& encdesc)
 {
     os << "Encoder: '" << encdesc.codecName << "' - ";
-    if (encdesc.mediaType == MediaInfo::VIDEO)
+    if (encdesc.mediaType == MediaType::VIDEO)
         os << "VIDEO";
-    else if (encdesc.mediaType == MediaInfo::AUDIO)
+    else if (encdesc.mediaType == MediaType::AUDIO)
         os << "AUDIO";
     else
         os << "UNKNOWN(MediaType)";
@@ -1462,7 +1454,7 @@ ostream& operator<<(ostream& os, const MediaEncoder::EncoderDescription& encdesc
 
 static bool ConvertAVOptionToOptionDescription(AVCodecPtr cdcptr, const AVOption* opt, MediaEncoder::Option::Description& optdesc)
 {
-    ALogger* logger = GetMediaEncoderLogger();
+    ALogger* logger = MediaEncoder::GetLogger();
     if (opt->type == AV_OPT_TYPE_INT || opt->type == AV_OPT_TYPE_INT64 || opt->type == AV_OPT_TYPE_UINT64)
         optdesc.valueType = MediaEncoder::Option::OPVT_INT;
     else if (opt->type == AV_OPT_TYPE_FLOAT || opt->type == AV_OPT_TYPE_DOUBLE)
@@ -1528,7 +1520,7 @@ static bool ConvertAVOptionToOptionEnumValue(const AVOption* opt, MediaEncoder::
 
 static void InitializeOptionDescList(AVCodecPtr cdcptr, vector<MediaEncoder::Option::Description>& optDescList)
 {
-    ALogger* logger = GetMediaEncoderLogger();
+    ALogger* logger = MediaEncoder::GetLogger();
     static vector<MediaEncoder::Option::Description> s_vidcdcOptDescList;
     static vector<MediaEncoder::Option::Description> s_audcdcOptDescList;
     if (cdcptr->type == AVMEDIA_TYPE_VIDEO)
@@ -1630,22 +1622,21 @@ static void InitializeOptionDescList(AVCodecPtr cdcptr, vector<MediaEncoder::Opt
     }
 }
 
-
-static MediaEncoder::EncoderDescription ConvertAVCodecToEncoderDescription(AVCodecPtr cdcptr)
+static MediaEncoder::Description ConvertAVCodecToEncoderDescription(AVCodecPtr cdcptr)
 {
-    ALogger* logger = GetMediaEncoderLogger();
+    ALogger* logger = MediaEncoder::GetLogger();
 
-    MediaEncoder::EncoderDescription encdesc;
+    MediaEncoder::Description encdesc;
     encdesc.codecName = string(cdcptr->name);
     if (cdcptr->long_name)
         encdesc.longName = string(cdcptr->long_name);
     encdesc.isHardwareEncoder = (cdcptr->capabilities&AV_CODEC_CAP_HARDWARE) != 0;
     if (cdcptr->type == AVMEDIA_TYPE_VIDEO)
-        encdesc.mediaType = MediaInfo::VIDEO;
+        encdesc.mediaType = MediaType::VIDEO;
     else if (cdcptr->type == AVMEDIA_TYPE_AUDIO)
-        encdesc.mediaType = MediaInfo::AUDIO;
+        encdesc.mediaType = MediaType::AUDIO;
     else
-        encdesc.mediaType = MediaInfo::UNKNOWN;
+        encdesc.mediaType = MediaType::UNKNOWN;
 
     InitializeOptionDescList(cdcptr, encdesc.optDescList);
 
@@ -1685,7 +1676,7 @@ static MediaEncoder::EncoderDescription ConvertAVCodecToEncoderDescription(AVCod
     return std::move(encdesc);
 }
 
-bool MediaEncoder::FindEncoder(const string& codecName, std::vector<MediaEncoder::EncoderDescription>& encoderDescList)
+bool MediaEncoder::FindEncoder(const string& codecName, vector<MediaEncoder::Description>& encoderDescList)
 {
     encoderDescList.clear();
     const AVCodecDescriptor* desc = avcodec_descriptor_get_by_name(codecName.c_str());
@@ -1705,4 +1696,5 @@ bool MediaEncoder::FindEncoder(const string& codecName, std::vector<MediaEncoder
         encoderDescList.push_back(std::move(ConvertAVCodecToEncoderDescription(p)));
     }
     return true;
+}
 }

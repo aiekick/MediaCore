@@ -19,7 +19,7 @@
 #include <thread>
 #include <algorithm>
 #include <list>
-#include "MediaOverview.h"
+#include "Overview.h"
 #include "FFUtils.h"
 extern "C"
 {
@@ -39,21 +39,21 @@ extern "C"
 using namespace std;
 using namespace Logger;
 
-class MediaOverview_Impl : public MediaOverview
+namespace MediaCore
+{
+class Overview_Impl : public Overview
 {
 public:
-    static ALogger* s_logger;
-
-    MediaOverview_Impl()
+    Overview_Impl()
     {
-        m_logger = GetMediaOverviewLogger();
+        m_logger = Overview::GetLogger();
     }
 
-    MediaOverview_Impl(const MediaOverview_Impl&) = delete;
-    MediaOverview_Impl(MediaOverview_Impl&&) = delete;
-    MediaOverview_Impl& operator=(const MediaOverview_Impl&) = delete;
+    Overview_Impl(const Overview_Impl&) = delete;
+    Overview_Impl(Overview_Impl&&) = delete;
+    Overview_Impl& operator=(const Overview_Impl&) = delete;
 
-    virtual ~MediaOverview_Impl() {}
+    virtual ~Overview_Impl() {}
 
     bool Open(const string& url, uint32_t snapshotCount) override
     {
@@ -61,7 +61,7 @@ public:
         if (IsOpened())
             Close();
 
-        MediaParserHolder hParser = CreateMediaParser();
+        MediaParser::Holder hParser = MediaParser::CreateInstance();
         if (!hParser->Open(url))
         {
             m_errMsg = hParser->GetError();
@@ -84,7 +84,7 @@ public:
         return true;
     }
 
-    bool Open(MediaParserHolder hParser, uint32_t snapshotCount) override
+    bool Open(MediaParser::Holder hParser, uint32_t snapshotCount) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!hParser || !hParser->IsOpened())
@@ -110,7 +110,7 @@ public:
         return true;
     }
 
-    MediaParserHolder GetMediaParser() const override
+    MediaParser::Holder GetMediaParser() const override
     {
         return m_hParser;
     }
@@ -145,7 +145,7 @@ public:
         return true;
     }
 
-    WaveformHolder GetWaveform() const override
+    Waveform::Holder GetWaveform() const override
     {
         return m_hWaveform;
     }
@@ -270,25 +270,25 @@ public:
         return true;
     }
 
-    MediaInfo::InfoHolder GetMediaInfo() const override
+    MediaInfo::Holder GetMediaInfo() const override
     {
         return m_hMediaInfo;
     }
 
-    const MediaInfo::VideoStream* GetVideoStream() const override
+    const VideoStream* GetVideoStream() const override
     {
-        MediaInfo::InfoHolder hInfo = m_hMediaInfo;
+        MediaInfo::Holder hInfo = m_hMediaInfo;
         if (!hInfo || !HasVideo())
             return nullptr;
-        return dynamic_cast<MediaInfo::VideoStream*>(hInfo->streams[m_vidStmIdx].get());
+        return dynamic_cast<VideoStream*>(hInfo->streams[m_vidStmIdx].get());
     }
 
-    const MediaInfo::AudioStream* GetAudioStream() const override
+    const AudioStream* GetAudioStream() const override
     {
-        MediaInfo::InfoHolder hInfo = m_hMediaInfo;
+        MediaInfo::Holder hInfo = m_hMediaInfo;
         if (!hInfo || !HasAudio())
             return nullptr;
-        return dynamic_cast<MediaInfo::AudioStream*>(hInfo->streams[m_audStmIdx].get());
+        return dynamic_cast<AudioStream*>(hInfo->streams[m_audStmIdx].get());
     }
 
     uint32_t GetVideoWidth() const override
@@ -371,7 +371,7 @@ private:
         return oss.str();
     }
 
-    bool OpenMedia(MediaParserHolder hParser)
+    bool OpenMedia(MediaParser::Holder hParser)
     {
         int fferr = avformat_open_input(&m_avfmtCtx, hParser->GetUrl().c_str(), nullptr, nullptr);
         if (fferr < 0)
@@ -395,7 +395,7 @@ private:
         m_vidfrmIntvTs = 0;
         if (HasVideo())
         {
-            MediaInfo::VideoStream* vidStream = dynamic_cast<MediaInfo::VideoStream*>(m_hMediaInfo->streams[m_vidStmIdx].get());
+            VideoStream* vidStream = dynamic_cast<VideoStream*>(m_hMediaInfo->streams[m_vidStmIdx].get());
             m_isImage = vidStream->isImage;
             m_vidStartMts = (int64_t)(vidStream->startTime*1000);
             m_vidDurMts = (int64_t)(vidStream->duration*1000);
@@ -424,8 +424,8 @@ private:
 
         if (HasAudio())
         {
-            MediaInfo::AudioStream* audStream = dynamic_cast<MediaInfo::AudioStream*>(m_hMediaInfo->streams[m_audStmIdx].get());
-            WaveformHolder hWaveform(new Waveform);
+            AudioStream* audStream = dynamic_cast<AudioStream*>(m_hMediaInfo->streams[m_audStmIdx].get());
+            Waveform::Holder hWaveform(new Waveform);
             // default 'm_aggregateSamples' value is 9.6, which is calculated as
             // 48kHz audio & 25fps video, 200 pixels in the UI between two adjacent snapshots.
             // video-frame-interval = 40 ms,
@@ -602,17 +602,17 @@ private:
         m_quit = false;
         if (HasVideo())
         {
-            m_demuxVidThread = thread(&MediaOverview_Impl::DemuxVideoThreadProc, this);
-            m_viddecThread = thread(&MediaOverview_Impl::VideoDecodeThreadProc, this);
-            m_genSsThread = thread(&MediaOverview_Impl::GenerateSsThreadProc, this);
+            m_demuxVidThread = thread(&Overview_Impl::DemuxVideoThreadProc, this);
+            m_viddecThread = thread(&Overview_Impl::VideoDecodeThreadProc, this);
+            m_genSsThread = thread(&Overview_Impl::GenerateSsThreadProc, this);
         }
         if (HasAudio())
         {
-            m_demuxAudThread = thread(&MediaOverview_Impl::DemuxAudioThreadProc, this);
-            m_auddecThread = thread(&MediaOverview_Impl::AudioDecodeThreadProc, this);
-            m_genWfThread = thread(&MediaOverview_Impl::GenWaveformThreadProc, this);
+            m_demuxAudThread = thread(&Overview_Impl::DemuxAudioThreadProc, this);
+            m_auddecThread = thread(&Overview_Impl::AudioDecodeThreadProc, this);
+            m_genWfThread = thread(&Overview_Impl::GenWaveformThreadProc, this);
         }
-        m_releaseThread = thread(&MediaOverview_Impl::ReleaseResourceProc, this);
+        m_releaseThread = thread(&Overview_Impl::ReleaseResourceProc, this);
     }
 
     void WaitAllThreadsQuit(bool callFromReleaseProc = false)
@@ -1437,8 +1437,8 @@ private:
     bool m_vidPreferUseHw{true};
     AVHWDeviceType m_vidUseHwType{AV_HWDEVICE_TYPE_NONE};
 
-    MediaParserHolder m_hParser;
-    MediaInfo::InfoHolder m_hMediaInfo;
+    MediaParser::Holder m_hParser;
+    MediaInfo::Holder m_hMediaInfo;
 
     AVFormatContext* m_avfmtCtx{nullptr};
     bool m_prepared{false};
@@ -1516,7 +1516,7 @@ private:
     double m_vidfrmIntvTs;
 
     // audio waveform
-    WaveformHolder m_hWaveform;
+    Waveform::Holder m_hWaveform;
     uint32_t m_singleFramePixels{200};
     double m_minAggregateSamples{5};
     double m_fixedAggregateSamples{0};
@@ -1528,26 +1528,19 @@ private:
     AVFrameToImMatConverter m_frmCvt;
 };
 
-ALogger* MediaOverview_Impl::s_logger;
+static const auto OVERVIEW_HOLDER_DELETER = [] (Overview* p) {
+    Overview_Impl* ptr = dynamic_cast<Overview_Impl*>(p);
+    ptr->Close();
+    delete ptr;
+};
 
-ALogger* GetMediaOverviewLogger()
+Overview::Holder Overview::CreateInstance()
 {
-    if (!MediaOverview_Impl::s_logger)
-        MediaOverview_Impl::s_logger = GetLogger("MOverview");
-    return MediaOverview_Impl::s_logger;
+    return Overview::Holder(new Overview_Impl(), OVERVIEW_HOLDER_DELETER);
 }
 
-MediaOverview* CreateMediaOverview()
+ALogger* Overview::GetLogger()
 {
-    return new MediaOverview_Impl();
+    return Logger::GetLogger("MOverview");
 }
-
-void ReleaseMediaOverview(MediaOverview** msrc)
-{
-    if (msrc == nullptr || *msrc == nullptr)
-        return;
-    MediaOverview_Impl* movr = dynamic_cast<MediaOverview_Impl*>(*msrc);
-    movr->Close();
-    delete movr;
-    *msrc = nullptr;
 }

@@ -30,663 +30,745 @@ using namespace Logger;
 
 namespace MediaCore
 {
-    bool VideoClip::USE_HWACCEL = true;
+bool VideoClip::USE_HWACCEL = true;
 
-    ostream& operator<<(ostream& os, VideoClip& clip)
+///////////////////////////////////////////////////////////////////////////////////////////
+// VideoClip_VideoImpl
+///////////////////////////////////////////////////////////////////////////////////////////
+class VideoClip_VideoImpl : public VideoClip
+{
+public:
+    VideoClip_VideoImpl(
+        int64_t id, MediaParser::Holder hParser,
+        uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate,
+        int64_t start, int64_t startOffset, int64_t endOffset, int64_t readpos, bool forward)
+        : m_id(id), m_start(start)
     {
-        if (clip.IsImage())
-            os << "(I){'id':" << clip.Id() << ", 'start':" << clip.Start() << ", 'dur':" << clip.Duration() << "}";
-        else
-            os << "(V){'id':" << clip.Id() << ", 'start':" << clip.Start() << ", 'dur':" << clip.Duration()
-                << ", 'soff':" << clip.StartOffset() << ", 'eoff':" << clip.EndOffset() << "}";
-        return os;
+        m_hInfo = hParser->GetMediaInfo();
+        if (hParser->GetBestVideoStreamIndex() < 0)
+            throw invalid_argument("Argument 'hParser' has NO VIDEO stream!");
+        auto vidStm = hParser->GetBestVideoStream();
+        if (vidStm->isImage)
+            throw invalid_argument("This video stream is an IMAGE, it should be instantiated with a 'VideoClip_ImageImpl' instance!");
+        m_hReader = MediaReader::CreateInstance();
+        m_hReader->EnableHwAccel(VideoClip::USE_HWACCEL);
+        if (!m_hReader->Open(hParser))
+            throw runtime_error(m_hReader->GetError());
+        if (!m_hReader->ConfigVideoReader(outWidth, outHeight))
+            throw runtime_error(m_hReader->GetError());
+        if (frameRate.num <= 0 || frameRate.den <= 0)
+            throw invalid_argument("Invalid argument value for 'frameRate'!");
+        m_frameRate = frameRate;
+        m_srcDuration = static_cast<int64_t>(m_hReader->GetVideoStream()->duration*1000);
+        if (startOffset < 0)
+            throw invalid_argument("Argument 'startOffset' can NOT be NEGATIVE!");
+        if (endOffset < 0)
+            throw invalid_argument("Argument 'endOffset' can NOT be NEGATIVE!");
+        if (startOffset+endOffset >= m_srcDuration*1000)
+            throw invalid_argument("Argument 'startOffset/endOffset', clip duration is NOT LARGER than 0!");
+        m_startOffset = startOffset;
+        m_endOffset = endOffset;
+        m_hReader->SetDirection(forward);
+        if (!m_hReader->SeekTo((double)startOffset/1000))
+            throw runtime_error(m_hReader->GetError());
+        bool suspend = readpos < -m_wakeupRange || readpos > Duration()+m_wakeupRange;
+        if (!m_hReader->Start(suspend))
+            throw runtime_error(m_hReader->GetError());
+        m_hWarpFilter = CreateVideoTransformFilter();
+        if (!m_hWarpFilter->Initialize(outWidth, outHeight))
+            throw runtime_error(m_hWarpFilter->GetError());
     }
 
-    ///////////////////////////////////////////////////////////////////////////////////////////
-    // VideoClip_VideoImpl
-    ///////////////////////////////////////////////////////////////////////////////////////////
-    class VideoClip_VideoImpl : public VideoClip
+    ~VideoClip_VideoImpl()
     {
-    public:
-        VideoClip_VideoImpl(
-            int64_t id, MediaParserHolder hParser,
-            uint32_t outWidth, uint32_t outHeight, const MediaInfo::Ratio& frameRate,
-            int64_t start, int64_t startOffset, int64_t endOffset, int64_t readpos, bool forward)
-            : m_id(id), m_start(start)
+        m_frameCache.clear();
+    }
+
+    Holder Clone(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) const override;
+
+    MediaParser::Holder GetMediaParser() const override
+    {
+        return m_hReader->GetMediaParser();
+    }
+
+    int64_t Id() const override
+    {
+        return m_id;
+    }
+    
+    int64_t TrackId() const override
+    {
+        return m_trackId;
+    }
+
+    bool IsImage() const override
+    {
+        return false;
+    }
+
+    int64_t Start() const override
+    {
+        return m_start;
+    }
+
+    int64_t End() const override
+    {
+        return m_start+Duration();
+    }
+
+    int64_t StartOffset() const override
+    {
+        return m_startOffset;
+    }
+
+    int64_t EndOffset() const override
+    {
+        return m_endOffset;
+    }
+
+    int64_t Duration() const override
+    {
+        return m_srcDuration-m_startOffset-m_endOffset;
+    }
+
+    uint32_t SrcWidth() const override
+    {
+        return m_hReader->GetVideoOutWidth();
+    }
+
+    uint32_t SrcHeight() const override
+    {
+        return m_hReader->GetVideoOutHeight();
+    }
+
+    uint32_t OutWidth() const override
+    {
+        return m_hWarpFilter->GetOutWidth();
+    }
+
+    uint32_t OutHeight() const override
+    {
+        return m_hWarpFilter->GetOutHeight();
+    }
+
+    void SetTrackId(int64_t trackId) override
+    {
+        m_trackId = trackId;
+    }
+
+    void SetStart(int64_t start) override
+    {
+        m_start = start;
+    }
+
+    void ChangeStartOffset(int64_t startOffset) override
+    {
+        if (startOffset == m_startOffset)
+            return;
+        if (startOffset < 0)
+            throw invalid_argument("Argument 'startOffset' can NOT be NEGATIVE!");
+        if (startOffset+m_endOffset >= m_srcDuration)
+            throw invalid_argument("Argument 'startOffset/endOffset', clip duration is NOT LARGER than 0!");
+        m_startOffset = startOffset;
+    }
+
+    void ChangeEndOffset(int64_t endOffset) override
+    {
+        if (endOffset == m_endOffset)
+            return;
+        if (endOffset < 0)
+            throw invalid_argument("Argument 'endOffset' can NOT be NEGATIVE!");
+        if (m_startOffset+endOffset >= m_srcDuration)
+            throw invalid_argument("Argument 'startOffset/endOffset', clip duration is NOT LARGER than 0!");
+        m_endOffset = endOffset;
+    }
+
+    void SetDuration(int64_t duration) override
+    {
+        throw runtime_error("'VideoClip_VideoImpl' dose NOT SUPPORT setting duration!");
+    }
+
+    void ReadVideoFrame(int64_t pos, vector<CorrelativeFrame>& frames, ImGui::ImMat& out, bool& eof) override
+    {
+        if (m_eof)
         {
-            m_hInfo = hParser->GetMediaInfo();
-            if (hParser->GetBestVideoStreamIndex() < 0)
-                throw invalid_argument("Argument 'hParser' has NO VIDEO stream!");
-            auto vidStm = hParser->GetBestVideoStream();
-            if (vidStm->isImage)
-                throw invalid_argument("This video stream is an IMAGE, it should be instantiated with a 'VideoClip_ImageImpl' instance!");
-            m_srcReader = CreateMediaReader();
-            m_srcReader->EnableHwAccel(VideoClip::USE_HWACCEL);
-            if (!m_srcReader->Open(hParser))
-                throw runtime_error(m_srcReader->GetError());
-            if (!m_srcReader->ConfigVideoReader(outWidth, outHeight))
-                throw runtime_error(m_srcReader->GetError());
-            if (frameRate.num <= 0 || frameRate.den <= 0)
-                throw invalid_argument("Invalid argument value for 'frameRate'!");
-            m_frameRate = frameRate;
-            m_srcDuration = static_cast<int64_t>(m_srcReader->GetVideoStream()->duration*1000);
-            if (startOffset < 0)
-                throw invalid_argument("Argument 'startOffset' can NOT be NEGATIVE!");
-            if (endOffset < 0)
-                throw invalid_argument("Argument 'endOffset' can NOT be NEGATIVE!");
-            if (startOffset+endOffset >= m_srcDuration*1000)
-                throw invalid_argument("Argument 'startOffset/endOffset', clip duration is NOT LARGER than 0!");
-            m_startOffset = startOffset;
-            m_endOffset = endOffset;
-            m_srcReader->SetDirection(forward);
-            if (!m_srcReader->SeekTo((double)startOffset/1000))
-                throw runtime_error(m_srcReader->GetError());
-            bool suspend = readpos < -m_wakeupRange || readpos > Duration()+m_wakeupRange;
-            if (!m_srcReader->Start(suspend))
-                throw runtime_error(m_srcReader->GetError());
-            m_transFilter = CreateVideoTransformFilter();
-            if (!m_transFilter->Initialize(outWidth, outHeight))
-                throw runtime_error(m_transFilter->GetError());
+            eof = true;
+            return;
+        }
+        if (m_hReader->IsSuspended())
+        {
+            m_hReader->Wakeup();
+            // Log(DEBUG) << ">>>> Clip#" << m_id <<" is WAKEUP." << endl;
         }
 
-        ~VideoClip_VideoImpl()
+        ImGui::ImMat image;
+        // try to read image from cache
+        const double ts = (double)pos/1000;
+        const function<bool(ImGui::ImMat&)> checkFunc1 = [ts] (ImGui::ImMat& m) { return m.time_stamp > ts; };
+        const function<bool(ImGui::ImMat&)> checkFunc2 = [ts] (ImGui::ImMat& m) { return m.time_stamp < ts; };
+        const bool readForward = m_hReader->IsDirectionForward();
+        auto checkFunc = readForward ? checkFunc1 : checkFunc2;
+        auto iter = find_if(m_frameCache.begin(), m_frameCache.end(), checkFunc);
+        if (iter != m_frameCache.end())
         {
-            m_frameCache.clear();
-            ReleaseMediaReader(&m_srcReader);
-        }
-
-        VideoClipHolder Clone(uint32_t outWidth, uint32_t outHeight, const MediaInfo::Ratio& frameRate) const override
-        {
-            VideoClip_VideoImpl* newInstance = new VideoClip_VideoImpl(
-                m_id, m_srcReader->GetMediaParser(), outWidth, outHeight, frameRate, m_start, m_startOffset, m_endOffset, 0, true);
-            if (m_filter) newInstance->SetFilter(m_filter->Clone());
-            newInstance->m_transFilter = m_transFilter->Clone(outWidth, outHeight);
-            return VideoClipHolder(newInstance);
-        }
-
-        MediaParserHolder GetMediaParser() const override
-        {
-            return m_srcReader->GetMediaParser();
-        }
-
-        int64_t Id() const override
-        {
-            return m_id;
-        }
-        
-        int64_t TrackId() const override
-        {
-            return m_trackId;
-        }
-
-        bool IsImage() const override
-        {
-            return false;
-        }
-
-        int64_t Start() const override
-        {
-            return m_start;
-        }
-
-        int64_t End() const override
-        {
-            return m_start+Duration();
-        }
-
-        int64_t StartOffset() const override
-        {
-            return m_startOffset;
-        }
-
-        int64_t EndOffset() const override
-        {
-            return m_endOffset;
-        }
-
-        int64_t Duration() const override
-        {
-            return m_srcDuration-m_startOffset-m_endOffset;
-        }
-
-        uint32_t SrcWidth() const override
-        {
-            return m_srcReader->GetVideoOutWidth();
-        }
-
-        uint32_t SrcHeight() const override
-        {
-            return m_srcReader->GetVideoOutHeight();
-        }
-
-        uint32_t OutWidth() const override
-        {
-            return m_transFilter->GetOutWidth();
-        }
-
-        uint32_t OutHeight() const override
-        {
-            return m_transFilter->GetOutHeight();
-        }
-
-        void SetTrackId(int64_t trackId) override
-        {
-            m_trackId = trackId;
-        }
-
-        void SetStart(int64_t start) override
-        {
-            m_start = start;
-        }
-
-        void ChangeStartOffset(int64_t startOffset) override
-        {
-            if (startOffset == m_startOffset)
-                return;
-            if (startOffset < 0)
-                throw invalid_argument("Argument 'startOffset' can NOT be NEGATIVE!");
-            if (startOffset+m_endOffset >= m_srcDuration)
-                throw invalid_argument("Argument 'startOffset/endOffset', clip duration is NOT LARGER than 0!");
-            m_startOffset = startOffset;
-        }
-
-        void ChangeEndOffset(int64_t endOffset) override
-        {
-            if (endOffset == m_endOffset)
-                return;
-            if (endOffset < 0)
-                throw invalid_argument("Argument 'endOffset' can NOT be NEGATIVE!");
-            if (m_startOffset+endOffset >= m_srcDuration)
-                throw invalid_argument("Argument 'startOffset/endOffset', clip duration is NOT LARGER than 0!");
-            m_endOffset = endOffset;
-        }
-
-        void SetDuration(int64_t duration) override
-        {
-            throw runtime_error("'VideoClip_VideoImpl' dose NOT SUPPORT setting duration!");
-        }
-
-        void ReadVideoFrame(int64_t pos, vector<CorrelativeFrame>& frames, ImGui::ImMat& out, bool& eof) override
-        {
-            if (m_eof)
+            if (iter != m_frameCache.begin())
             {
-                eof = true;
-                return;
+                iter--;
+                image = *iter;
             }
-            if (m_srcReader->IsSuspended())
-            {
-                m_srcReader->Wakeup();
-                // Log(DEBUG) << ">>>> Clip#" << m_id <<" is WAKEUP." << endl;
-            }
-
-            ImGui::ImMat image;
-            // try to read image from cache
-            const double ts = (double)pos/1000;
-            const function<bool(ImGui::ImMat&)> checkFunc1 = [ts] (ImGui::ImMat& m) { return m.time_stamp > ts; };
-            const function<bool(ImGui::ImMat&)> checkFunc2 = [ts] (ImGui::ImMat& m) { return m.time_stamp < ts; };
-            const bool readForward = m_srcReader->IsDirectionForward();
-            auto checkFunc = readForward ? checkFunc1 : checkFunc2;
-            auto iter = find_if(m_frameCache.begin(), m_frameCache.end(), checkFunc);
-            if (iter != m_frameCache.end())
-            {
-                if (iter != m_frameCache.begin())
-                {
-                    iter--;
-                    image = *iter;
-                }
-                else
-                    m_frameCache.clear();
-            }
-
-            // read image from MediaReader
-            if (image.empty())
-            {
-                if (!m_srcReader->ReadVideoFrame((double)(pos+m_startOffset)/1000, image, eof))
-                    throw runtime_error(m_srcReader->GetError());
-                if (!image.empty() && (m_frameCache.empty() ||
-                    (readForward && image.time_stamp > m_frameCache.back().time_stamp) ||
-                    (!readForward && image.time_stamp < m_frameCache.back().time_stamp)))
-                {
-                    m_frameCache.push_back(image);
-                    while (m_frameCache.size() > m_frameCacheSize)
-                        m_frameCache.pop_front();
-                }
-            }
-            frames.push_back({CorrelativeFrame::PHASE_SOURCE_FRAME, m_id, m_trackId, image});
-
-            // process with external filter
-            VideoFilterHolder filter = m_filter;
-            if (filter)
-                image = filter->FilterImage(image, pos/*+m_start*/);
-            frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, image});
-
-            // process with transform filter
-            image = m_transFilter->FilterImage(image, pos/*+m_start*/);
-            frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, image});
-            out = image;
-        }
-
-        void SeekTo(int64_t pos) override
-        {
-            if (pos > Duration())
-                return;
-            if (pos < 0)
-                pos = 0;
-            const bool readForward = m_srcReader->IsDirectionForward();
-            const double ts = (double)pos/1000;
-            if (m_frameCache.empty() ||
-                (readForward && (ts < m_frameCache.front().time_stamp || ts > m_frameCache.back().time_stamp)) ||
-                (!readForward && (ts > m_frameCache.front().time_stamp || ts < m_frameCache.back().time_stamp)))
-            {
-                // Log(DEBUG) << "!!! clear frame cache !!!" << endl;
+            else
                 m_frameCache.clear();
-                if (!m_srcReader->SeekTo((double)(pos+m_startOffset)/1000))
-                    throw runtime_error(m_srcReader->GetError());
-            }
-            m_eof = false;
         }
 
-        void NotifyReadPos(int64_t pos) override
+        // read image from MediaReader
+        if (image.empty())
         {
-            if (pos < -m_wakeupRange || pos > Duration()+m_wakeupRange)
+            if (!m_hReader->ReadVideoFrame((double)(pos+m_startOffset)/1000, image, eof))
+                throw runtime_error(m_hReader->GetError());
+            if (!image.empty() && (m_frameCache.empty() ||
+                (readForward && image.time_stamp > m_frameCache.back().time_stamp) ||
+                (!readForward && image.time_stamp < m_frameCache.back().time_stamp)))
             {
-                if (!m_srcReader->IsSuspended())
-                {
-                    m_srcReader->Suspend();
-                    // Log(DEBUG) << ">>>> Clip#" << m_id <<" is SUSPENDED." << endl;
-                }
-            }
-            else if (m_srcReader->IsSuspended())
-            {
-                m_srcReader->Wakeup();
-                // Log(DEBUG) << ">>>> Clip#" << m_id <<" is WAKEUP." << endl;
+                m_frameCache.push_back(image);
+                while (m_frameCache.size() > m_frameCacheSize)
+                    m_frameCache.pop_front();
             }
         }
+        frames.push_back({CorrelativeFrame::PHASE_SOURCE_FRAME, m_id, m_trackId, image});
 
-        void SetDirection(bool forward) override
-        {
-            // Log(DEBUG) << "!!! clear frame cache(2) !!!" << endl;
-            m_frameCache.clear();
-            m_srcReader->SetDirection(forward);
-        }
+        // process with external filter
+        auto hFilter = m_hFilter;
+        if (hFilter)
+            image = hFilter->FilterImage(image, pos/*+m_start*/);
+        frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, image});
 
-        void SetFilter(VideoFilterHolder filter) override
-        {
-            if (filter)
-            {
-                filter->ApplyTo(this);
-                m_filter = filter;
-            }
-            else
-            {
-                m_filter = nullptr;
-            }
-        }
-
-        VideoFilterHolder GetFilter() const override
-        {
-            return m_filter;
-        }
-
-        VideoTransformFilterHolder GetTransformFilter() override
-        {
-            return m_transFilter;
-        }
-
-    private:
-        int64_t m_id;
-        int64_t m_trackId{-1};
-        MediaInfo::InfoHolder m_hInfo;
-        MediaReader* m_srcReader;
-        int64_t m_srcDuration;
-        int64_t m_start;
-        int64_t m_startOffset;
-        int64_t m_endOffset;
-        bool m_eof{false};
-        MediaInfo::Ratio m_frameRate;
-        uint32_t m_frameIndex{0};
-        VideoFilterHolder m_filter;
-        VideoTransformFilterHolder m_transFilter;
-        int64_t m_wakeupRange{1000};
-        std::list<ImGui::ImMat> m_frameCache;
-        uint32_t m_frameCacheSize{4};
-    };
-
-    class VideoClip_ImageImpl : public VideoClip
-    {
-    public:
-        VideoClip_ImageImpl(
-            int64_t id, MediaParserHolder hParser,
-            uint32_t outWidth, uint32_t outHeight, int64_t start, int64_t duration)
-            : m_id(id), m_start(start)
-        {
-            m_hInfo = hParser->GetMediaInfo();
-            if (hParser->GetBestVideoStreamIndex() < 0)
-                throw invalid_argument("Argument 'hParser' has NO VIDEO stream!");
-            auto vidStm = hParser->GetBestVideoStream();
-            if (!vidStm->isImage)
-                throw invalid_argument("This video stream is NOT an IMAGE, it should be instantiated with a 'VideoClip_VideoImpl' instance!");
-            m_srcReader = CreateMediaReader();
-            if (!m_srcReader->Open(hParser))
-                throw runtime_error(m_srcReader->GetError());
-            if (!m_srcReader->ConfigVideoReader(0u, 0u))
-                throw runtime_error(m_srcReader->GetError());
-            if (duration <= 0)
-                throw invalid_argument("Argument 'duration' must be positive!");
-            m_srcDuration = duration;
-            m_start = start;
-            if (!m_srcReader->Start())
-                throw runtime_error(m_srcReader->GetError());
-            m_transFilter = CreateVideoTransformFilter();
-            if (!m_transFilter->Initialize(outWidth, outHeight))
-                throw runtime_error(m_transFilter->GetError());
-        }
-
-        ~VideoClip_ImageImpl()
-        {
-            ReleaseMediaReader(&m_srcReader);
-        }
-
-        VideoClipHolder Clone(uint32_t outWidth, uint32_t outHeight, const MediaInfo::Ratio& frameRate) const override
-        {
-            VideoClip_ImageImpl* newInstance = new VideoClip_ImageImpl(
-                m_id, m_srcReader->GetMediaParser(), outWidth, outHeight, m_start, m_srcDuration);
-            if (m_filter) newInstance->SetFilter(m_filter->Clone());
-            newInstance->m_transFilter = m_transFilter->Clone(outWidth, outHeight);
-            return VideoClipHolder(newInstance);
-        }
-
-        MediaParserHolder GetMediaParser() const override
-        {
-            return m_srcReader->GetMediaParser();
-        }
-
-        int64_t Id() const override
-        {
-            return m_id;
-        }
-        
-        int64_t TrackId() const override
-        {
-            return m_trackId;
-        }
-
-        bool IsImage() const override
-        {
-            return true;
-        }
-
-        int64_t Start() const override
-        {
-            return m_start;
-        }
-
-        int64_t End() const override
-        {
-            return m_start+Duration();
-        }
-
-        int64_t StartOffset() const override
-        {
-            return 0;
-        }
-
-        int64_t EndOffset() const override
-        {
-            return 0;
-        }
-
-        int64_t Duration() const override
-        {
-            return m_srcDuration;
-        }
-
-        uint32_t SrcWidth() const override
-        {
-            return m_srcReader->GetVideoOutWidth();
-        }
-
-        uint32_t SrcHeight() const override
-        {
-            return m_srcReader->GetVideoOutHeight();
-        }
-
-        uint32_t OutWidth() const override
-        {
-            return m_transFilter->GetOutWidth();
-        }
-
-        uint32_t OutHeight() const override
-        {
-            return m_transFilter->GetOutHeight();
-        }
-
-        void SetTrackId(int64_t trackId) override
-        {
-            m_trackId = trackId;
-        }
-
-        void SetStart(int64_t start) override
-        {
-            m_start = start;
-        }
-
-        void ChangeStartOffset(int64_t startOffset) override
-        {}
-
-        void ChangeEndOffset(int64_t endOffset) override
-        {}
-
-        void SetDuration(int64_t duration) override
-        {
-            if (duration <= 0)
-                throw invalid_argument("Argument 'duration' must be a positive integer!");
-            m_srcDuration = duration;
-        }
-
-        void ReadVideoFrame(int64_t pos, vector<CorrelativeFrame>& frames, ImGui::ImMat& out, bool& eof) override
-        {
-            ImGui::ImMat image;
-            if (!m_srcReader->ReadVideoFrame(0, image, eof))
-                throw runtime_error(m_srcReader->GetError());
-            frames.push_back({CorrelativeFrame::PHASE_SOURCE_FRAME, m_id, m_trackId, image});
-
-            // process with external filter
-            VideoFilterHolder filter = m_filter;
-            if (filter)
-                image = filter->FilterImage(image, pos/*+m_start*/);
-            frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, image});
-
-            // process with transform filter
-            image = m_transFilter->FilterImage(image, pos/*+m_start*/);
-            frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, image});
-            out = image;
-        }
-
-        void SeekTo(int64_t pos) override
-        {}
-
-        void NotifyReadPos(int64_t pos) override
-        {}
-
-        void SetDirection(bool forward) override
-        {}
-
-        void SetFilter(VideoFilterHolder filter) override
-        {
-            if (filter)
-            {
-                filter->ApplyTo(this);
-                m_filter = filter;
-            }
-            else
-            {
-                m_filter = nullptr;
-            }
-        }
-
-        VideoFilterHolder GetFilter() const override
-        {
-            return m_filter;
-        }
-
-        VideoTransformFilterHolder GetTransformFilter() override
-        {
-            return m_transFilter;
-        }
-
-    private:
-        int64_t m_id;
-        int64_t m_trackId{-1};
-        MediaInfo::InfoHolder m_hInfo;
-        MediaReader* m_srcReader;
-        int64_t m_srcDuration;
-        int64_t m_start;
-        VideoFilterHolder m_filter;
-        VideoTransformFilterHolder m_transFilter;
-    };
-
-    VideoClipHolder VideoClip::CreateVideoInstance(
-            int64_t id, MediaParserHolder hParser,
-            uint32_t outWidth, uint32_t outHeight, const MediaInfo::Ratio& frameRate,
-            int64_t start, int64_t startOffset, int64_t endOffset, int64_t readpos, bool forward)
-    {
-        return VideoClipHolder(new VideoClip_VideoImpl(id, hParser, outWidth, outHeight, frameRate, start, startOffset, endOffset, readpos, true));
+        // process with transform filter
+        image = m_hWarpFilter->FilterImage(image, pos/*+m_start*/);
+        frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, image});
+        out = image;
     }
 
-    VideoClipHolder VideoClip::CreateImageInstance(
-            int64_t id, MediaParserHolder hParser,
-            uint32_t outWidth, uint32_t outHeight, int64_t start, int64_t duration)
-    {
-        return VideoClipHolder(new VideoClip_ImageImpl(id, hParser, outWidth, outHeight, start, duration));
-    }
-
-    ///////////////////////////////////////////////////////////////////////////////////////////
-    // DefaultVideoTransition_Impl
-    ///////////////////////////////////////////////////////////////////////////////////////////
-    class DefaultVideoTransition_Impl : public VideoTransition
-    {
-    public:
-        VideoTransitionHolder Clone() override
-        {
-            return VideoTransitionHolder(new DefaultVideoTransition_Impl);
-        }
-
-        void ApplyTo(VideoOverlap* overlap) override
-        {
-            m_overlapPtr = overlap;
-        }
-
-        ImGui::ImMat MixTwoImages(const ImGui::ImMat& vmat1, const ImGui::ImMat& vmat2, int64_t pos, int64_t dur) override
-        {
-#if IMGUI_VULKAN_SHADER
-            ImGui::ImMat dst;
-            dst.type = IM_DT_INT8;
-            double alpha = 1-(double)pos/m_overlapPtr->Duration();
-            m_alphaBlender.blend(vmat1, vmat2, dst, (float)alpha);
-            return dst;
-#else
-            return pos < m_overlapPtr->Duration()/2 ? vmat1 : vmat2;
-#endif
-        }
-
-    private:
-        VideoOverlap* m_overlapPtr{nullptr};
-#if IMGUI_VULKAN_SHADER
-        ImGui::ColorConvert_vulkan m_clrcvt;
-        ImGui::AlphaBlending_vulkan m_alphaBlender;
-#endif
-    };
-
-    ///////////////////////////////////////////////////////////////////////////////////////////
-    // VideoOverlap
-    ///////////////////////////////////////////////////////////////////////////////////////////
-    VideoOverlap::VideoOverlap(int64_t id, VideoClipHolder hClip1, VideoClipHolder hClip2)
-        : m_id(id), m_frontClip(hClip1), m_rearClip(hClip2), m_transition(new DefaultVideoTransition_Impl())
-    {
-        Update();
-        m_transition->ApplyTo(this);
-    }
-
-    void VideoOverlap::Update()
-    {
-        VideoClipHolder hClip1 = m_frontClip;
-        VideoClipHolder hClip2 = m_rearClip;
-        if (hClip1->Start() <= hClip2->Start())
-        {
-            m_frontClip = hClip1;
-            m_rearClip = hClip2;
-        }
-        else
-        {
-            m_frontClip = hClip2;
-            m_rearClip = hClip1;
-        }
-        if (m_frontClip->End() <= m_rearClip->Start())
-        {
-            m_start = m_end = 0;
-        }
-        else
-        {
-            m_start = m_rearClip->Start();
-            m_end = m_frontClip->End() <= m_rearClip->End() ? m_frontClip->End() : m_rearClip->End();
-        }
-    }
-
-    void VideoOverlap::SetTransition(VideoTransitionHolder transition)
-    {
-        if (transition)
-        {
-            transition->ApplyTo(this);
-            m_transition = transition;
-        }
-        else
-        {
-            VideoTransitionHolder defaultTrans(new DefaultVideoTransition_Impl());
-            defaultTrans->ApplyTo(this);
-            m_transition = defaultTrans;
-        }
-    }
-
-    void VideoOverlap::SeekTo(int64_t pos)
+    void SeekTo(int64_t pos) override
     {
         if (pos > Duration())
             return;
         if (pos < 0)
             pos = 0;
-        int64_t pos1 = pos+(Start()-m_frontClip->Start());
-        m_frontClip->SeekTo(pos1);
-        int64_t pos2 = pos+(Start()-m_rearClip->Start());
-        m_rearClip->SeekTo(pos2);
+        const bool readForward = m_hReader->IsDirectionForward();
+        const double ts = (double)pos/1000;
+        if (m_frameCache.empty() ||
+            (readForward && (ts < m_frameCache.front().time_stamp || ts > m_frameCache.back().time_stamp)) ||
+            (!readForward && (ts > m_frameCache.front().time_stamp || ts < m_frameCache.back().time_stamp)))
+        {
+            // Log(DEBUG) << "!!! clear frame cache !!!" << endl;
+            m_frameCache.clear();
+            if (!m_hReader->SeekTo((double)(pos+m_startOffset)/1000))
+                throw runtime_error(m_hReader->GetError());
+        }
+        m_eof = false;
     }
 
-    void VideoOverlap::ReadVideoFrame(int64_t pos, vector<CorrelativeFrame>& frames, ImGui::ImMat& out, bool& eof)
+    void NotifyReadPos(int64_t pos) override
+    {
+        if (pos < -m_wakeupRange || pos > Duration()+m_wakeupRange)
+        {
+            if (!m_hReader->IsSuspended())
+            {
+                m_hReader->Suspend();
+                // Log(DEBUG) << ">>>> Clip#" << m_id <<" is SUSPENDED." << endl;
+            }
+        }
+        else if (m_hReader->IsSuspended())
+        {
+            m_hReader->Wakeup();
+            // Log(DEBUG) << ">>>> Clip#" << m_id <<" is WAKEUP." << endl;
+        }
+    }
+
+    void SetDirection(bool forward) override
+    {
+        // Log(DEBUG) << "!!! clear frame cache(2) !!!" << endl;
+        m_frameCache.clear();
+        m_hReader->SetDirection(forward);
+    }
+
+    void SetFilter(VideoFilter::Holder filter) override
+    {
+        if (filter)
+        {
+            filter->ApplyTo(this);
+            m_hFilter = filter;
+        }
+        else
+        {
+            m_hFilter = nullptr;
+        }
+    }
+
+    VideoFilter::Holder GetFilter() const override
+    {
+        return m_hFilter;
+    }
+
+    VideoTransformFilterHolder GetTransformFilter() override
+    {
+        return m_hWarpFilter;
+    }
+
+private:
+    int64_t m_id;
+    int64_t m_trackId{-1};
+    MediaInfo::Holder m_hInfo;
+    MediaReader::Holder m_hReader;
+    int64_t m_srcDuration;
+    int64_t m_start;
+    int64_t m_startOffset;
+    int64_t m_endOffset;
+    bool m_eof{false};
+    Ratio m_frameRate;
+    uint32_t m_frameIndex{0};
+    VideoFilter::Holder m_hFilter;
+    VideoTransformFilterHolder m_hWarpFilter;
+    int64_t m_wakeupRange{1000};
+    std::list<ImGui::ImMat> m_frameCache;
+    uint32_t m_frameCacheSize{4};
+};
+
+static const auto VIDEO_CLIP_HOLDER_VIDEOIMPL_DELETER = [] (VideoClip* p) {
+    VideoClip_VideoImpl* ptr = dynamic_cast<VideoClip_VideoImpl*>(p);
+    delete ptr;
+};
+
+VideoClip::Holder VideoClip::CreateVideoInstance(
+        int64_t id, MediaParser::Holder hParser,
+        uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate,
+        int64_t start, int64_t startOffset, int64_t endOffset, int64_t readpos, bool forward)
+{
+    return VideoClip::Holder(new VideoClip_VideoImpl(id, hParser, outWidth, outHeight, frameRate, start, startOffset, endOffset, readpos, true),
+            VIDEO_CLIP_HOLDER_VIDEOIMPL_DELETER);
+}
+
+VideoClip::Holder VideoClip_VideoImpl::Clone(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) const
+{
+    VideoClip_VideoImpl* newInstance = new VideoClip_VideoImpl(
+        m_id, m_hReader->GetMediaParser(), outWidth, outHeight, frameRate, m_start, m_startOffset, m_endOffset, 0, true);
+    if (m_hFilter) newInstance->SetFilter(m_hFilter->Clone());
+    newInstance->m_hWarpFilter = m_hWarpFilter->Clone(outWidth, outHeight);
+    return VideoClip::Holder(newInstance, VIDEO_CLIP_HOLDER_VIDEOIMPL_DELETER);
+}
+
+class VideoClip_ImageImpl : public VideoClip
+{
+public:
+    VideoClip_ImageImpl(
+        int64_t id, MediaParser::Holder hParser,
+        uint32_t outWidth, uint32_t outHeight, int64_t start, int64_t duration)
+        : m_id(id), m_start(start)
+    {
+        m_hInfo = hParser->GetMediaInfo();
+        if (hParser->GetBestVideoStreamIndex() < 0)
+            throw invalid_argument("Argument 'hParser' has NO VIDEO stream!");
+        auto vidStm = hParser->GetBestVideoStream();
+        if (!vidStm->isImage)
+            throw invalid_argument("This video stream is NOT an IMAGE, it should be instantiated with a 'VideoClip_VideoImpl' instance!");
+        m_hReader = MediaReader::CreateInstance();
+        if (!m_hReader->Open(hParser))
+            throw runtime_error(m_hReader->GetError());
+        if (!m_hReader->ConfigVideoReader(0u, 0u))
+            throw runtime_error(m_hReader->GetError());
+        if (duration <= 0)
+            throw invalid_argument("Argument 'duration' must be positive!");
+        m_srcDuration = duration;
+        m_start = start;
+        if (!m_hReader->Start())
+            throw runtime_error(m_hReader->GetError());
+        m_hWarpFilter = CreateVideoTransformFilter();
+        if (!m_hWarpFilter->Initialize(outWidth, outHeight))
+            throw runtime_error(m_hWarpFilter->GetError());
+    }
+
+    ~VideoClip_ImageImpl()
+    {
+    }
+
+    Holder Clone(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) const override;
+
+    MediaParser::Holder GetMediaParser() const override
+    {
+        return m_hReader->GetMediaParser();
+    }
+
+    int64_t Id() const override
+    {
+        return m_id;
+    }
+    
+    int64_t TrackId() const override
+    {
+        return m_trackId;
+    }
+
+    bool IsImage() const override
+    {
+        return true;
+    }
+
+    int64_t Start() const override
+    {
+        return m_start;
+    }
+
+    int64_t End() const override
+    {
+        return m_start+Duration();
+    }
+
+    int64_t StartOffset() const override
+    {
+        return 0;
+    }
+
+    int64_t EndOffset() const override
+    {
+        return 0;
+    }
+
+    int64_t Duration() const override
+    {
+        return m_srcDuration;
+    }
+
+    uint32_t SrcWidth() const override
+    {
+        return m_hReader->GetVideoOutWidth();
+    }
+
+    uint32_t SrcHeight() const override
+    {
+        return m_hReader->GetVideoOutHeight();
+    }
+
+    uint32_t OutWidth() const override
+    {
+        return m_hWarpFilter->GetOutWidth();
+    }
+
+    uint32_t OutHeight() const override
+    {
+        return m_hWarpFilter->GetOutHeight();
+    }
+
+    void SetTrackId(int64_t trackId) override
+    {
+        m_trackId = trackId;
+    }
+
+    void SetStart(int64_t start) override
+    {
+        m_start = start;
+    }
+
+    void ChangeStartOffset(int64_t startOffset) override
+    {}
+
+    void ChangeEndOffset(int64_t endOffset) override
+    {}
+
+    void SetDuration(int64_t duration) override
+    {
+        if (duration <= 0)
+            throw invalid_argument("Argument 'duration' must be a positive integer!");
+        m_srcDuration = duration;
+    }
+
+    void ReadVideoFrame(int64_t pos, vector<CorrelativeFrame>& frames, ImGui::ImMat& out, bool& eof) override
+    {
+        ImGui::ImMat image;
+        if (!m_hReader->ReadVideoFrame(0, image, eof))
+            throw runtime_error(m_hReader->GetError());
+        frames.push_back({CorrelativeFrame::PHASE_SOURCE_FRAME, m_id, m_trackId, image});
+
+        // process with external filter
+        VideoFilter::Holder filter = m_hFilter;
+        if (filter)
+            image = filter->FilterImage(image, pos/*+m_start*/);
+        frames.push_back({CorrelativeFrame::PHASE_AFTER_FILTER, m_id, m_trackId, image});
+
+        // process with transform filter
+        image = m_hWarpFilter->FilterImage(image, pos/*+m_start*/);
+        frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSFORM, m_id, m_trackId, image});
+        out = image;
+    }
+
+    void SeekTo(int64_t pos) override
+    {}
+
+    void NotifyReadPos(int64_t pos) override
+    {}
+
+    void SetDirection(bool forward) override
+    {}
+
+    void SetFilter(VideoFilter::Holder filter) override
+    {
+        if (filter)
+        {
+            filter->ApplyTo(this);
+            m_hFilter = filter;
+        }
+        else
+        {
+            m_hFilter = nullptr;
+        }
+    }
+
+    VideoFilter::Holder GetFilter() const override
+    {
+        return m_hFilter;
+    }
+
+    VideoTransformFilterHolder GetTransformFilter() override
+    {
+        return m_hWarpFilter;
+    }
+
+private:
+    int64_t m_id;
+    int64_t m_trackId{-1};
+    MediaInfo::Holder m_hInfo;
+    MediaReader::Holder m_hReader;
+    int64_t m_srcDuration;
+    int64_t m_start;
+    VideoFilter::Holder m_hFilter;
+    VideoTransformFilterHolder m_hWarpFilter;
+};
+
+static const auto VIDEO_CLIP_HOLDER_IMAGEIMPL_DELETER = [] (VideoClip* p) {
+    VideoClip_ImageImpl* ptr = dynamic_cast<VideoClip_ImageImpl*>(p);
+    delete ptr;
+};
+
+VideoClip::Holder VideoClip::CreateImageInstance(
+        int64_t id, MediaParser::Holder hParser,
+        uint32_t outWidth, uint32_t outHeight, int64_t start, int64_t duration)
+{
+    return VideoClip::Holder(new VideoClip_ImageImpl(id, hParser, outWidth, outHeight, start, duration),
+            VIDEO_CLIP_HOLDER_IMAGEIMPL_DELETER);
+}
+
+VideoClip::Holder VideoClip_ImageImpl::Clone(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) const
+{
+    VideoClip_ImageImpl* newInstance = new VideoClip_ImageImpl(
+        m_id, m_hReader->GetMediaParser(), outWidth, outHeight, m_start, m_srcDuration);
+    if (m_hFilter) newInstance->SetFilter(m_hFilter->Clone());
+    newInstance->m_hWarpFilter = m_hWarpFilter->Clone(outWidth, outHeight);
+    return VideoClip::Holder(newInstance, VIDEO_CLIP_HOLDER_IMAGEIMPL_DELETER);
+}
+
+ostream& operator<<(ostream& os, VideoClip::Holder hClip)
+{
+    if (hClip->IsImage())
+        os << "(I){'id':" << hClip->Id() << ", 'start':" << hClip->Start() << ", 'dur':" << hClip->Duration() << "}";
+    else
+        os << "(V){'id':" << hClip->Id() << ", 'start':" << hClip->Start() << ", 'dur':" << hClip->Duration()
+            << ", 'soff':" << hClip->StartOffset() << ", 'eoff':" << hClip->EndOffset() << "}";
+    return os;
+}
+
+
+///////////////////////////////////////////////////////////////////////////////////////////
+// DefaultVideoTransition_Impl
+///////////////////////////////////////////////////////////////////////////////////////////
+class DefaultVideoTransition_Impl : public VideoTransition
+{
+public:
+    Holder Clone() override
+    {
+        return Holder(new DefaultVideoTransition_Impl);
+    }
+
+    void ApplyTo(VideoOverlap* overlap) override
+    {
+        m_overlapPtr = overlap;
+    }
+
+    ImGui::ImMat MixTwoImages(const ImGui::ImMat& vmat1, const ImGui::ImMat& vmat2, int64_t pos, int64_t dur) override
+    {
+#if IMGUI_VULKAN_SHADER
+        ImGui::ImMat dst;
+        dst.type = IM_DT_INT8;
+        double alpha = 1-(double)pos/m_overlapPtr->Duration();
+        m_alphaBlender.blend(vmat1, vmat2, dst, (float)alpha);
+        return dst;
+#else
+        return pos < m_overlapPtr->Duration()/2 ? vmat1 : vmat2;
+#endif
+    }
+
+private:
+    VideoOverlap* m_overlapPtr{nullptr};
+#if IMGUI_VULKAN_SHADER
+    ImGui::ColorConvert_vulkan m_clrcvt;
+    ImGui::AlphaBlending_vulkan m_alphaBlender;
+#endif
+};
+
+///////////////////////////////////////////////////////////////////////////////////////////
+// VideoOverlap
+///////////////////////////////////////////////////////////////////////////////////////////
+class VideoOverlap_Impl : public VideoOverlap
+{
+public:
+    VideoOverlap_Impl(int64_t id, VideoClip::Holder hClip1, VideoClip::Holder hClip2)
+        : m_id(id), m_hFrontClip(hClip1), m_hRearClip(hClip2), m_hTrans(new DefaultVideoTransition_Impl())
+    {
+        Update();
+        m_hTrans->ApplyTo(this);
+    }
+
+    int64_t Id() const override
+    {
+        return m_id;
+    }
+
+    void SetId(int64_t id) override
+    {
+        m_id = id;
+    }
+
+    int64_t Start() const override
+    {
+        return m_start;
+    }
+
+    int64_t End() const override
+    {
+        return m_end;
+    }
+
+    int64_t Duration() const override
+    {
+        return m_end-m_start;
+    }
+
+    VideoClip::Holder FrontClip() const override
+    {
+        return m_hFrontClip;
+    }
+
+    VideoClip::Holder RearClip() const override
+    {
+        return m_hRearClip;
+    }
+
+    void ReadVideoFrame(int64_t pos, vector<CorrelativeFrame>& frames, ImGui::ImMat& out, bool& eof) override
     {
         if (pos < 0 || pos > Duration())
             throw invalid_argument("Argument 'pos' can NOT be NEGATIVE or larger than overlap duration!");
 
         ImGui::ImMat vmat1;
         bool eof1{false};
-        int64_t pos1 = pos+(Start()-m_frontClip->Start());
-        m_frontClip->ReadVideoFrame(pos1, frames, vmat1, eof1);
+        int64_t pos1 = pos+(Start()-m_hFrontClip->Start());
+        m_hFrontClip->ReadVideoFrame(pos1, frames, vmat1, eof1);
 
         ImGui::ImMat vmat2;
         bool eof2{false};
-        int64_t pos2 = pos+(Start()-m_rearClip->Start());
-        m_rearClip->ReadVideoFrame(pos2, frames, vmat2, eof2);
+        int64_t pos2 = pos+(Start()-m_hRearClip->Start());
+        m_hRearClip->ReadVideoFrame(pos2, frames, vmat2, eof2);
 
-        VideoTransitionHolder transition = m_transition;
-        out = transition->MixTwoImages(vmat1, vmat2, pos+m_start, Duration());
-        frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSITION, m_frontClip->Id(), m_frontClip->TrackId(), out});
+        auto hTrans = m_hTrans;
+        out = hTrans->MixTwoImages(vmat1, vmat2, pos+m_start, Duration());
+        frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSITION, m_hFrontClip->Id(), m_hFrontClip->TrackId(), out});
 
         eof = eof1 || eof2;
         if (pos == Duration())
             eof = true;
     }
 
-    std::ostream& operator<<(std::ostream& os, VideoOverlap& overlap)
+    void SeekTo(int64_t pos) override
     {
-        os << "{'id':" << overlap.Id() << ", 'start':" << overlap.Start() << ", 'dur':" << overlap.Duration() << "}";
-        return os;
+        if (pos > Duration())
+            return;
+        if (pos < 0)
+            pos = 0;
+        int64_t pos1 = pos+(Start()-m_hFrontClip->Start());
+        m_hFrontClip->SeekTo(pos1);
+        int64_t pos2 = pos+(Start()-m_hRearClip->Start());
+        m_hRearClip->SeekTo(pos2);
     }
+
+    void Update() override
+    {
+        auto hClip1 = m_hFrontClip;
+        auto hClip2 = m_hRearClip;
+        if (hClip1->Start() <= hClip2->Start())
+        {
+            m_hFrontClip = hClip1;
+            m_hRearClip = hClip2;
+        }
+        else
+        {
+            m_hFrontClip = hClip2;
+            m_hRearClip = hClip1;
+        }
+        if (m_hFrontClip->End() <= m_hRearClip->Start())
+        {
+            m_start = m_end = 0;
+        }
+        else
+        {
+            m_start = m_hRearClip->Start();
+            m_end = m_hFrontClip->End() <= m_hRearClip->End() ? m_hFrontClip->End() : m_hRearClip->End();
+        }
+    }
+
+    VideoTransition::Holder GetTransition() const override
+    {
+        return m_hTrans;
+    }
+
+    void SetTransition(VideoTransition::Holder hTrans) override
+    {
+        if (hTrans)
+        {
+            hTrans->ApplyTo(this);
+            m_hTrans = hTrans;
+        }
+        else
+        {
+            VideoTransition::Holder defaultTrans(new DefaultVideoTransition_Impl());
+            defaultTrans->ApplyTo(this);
+            m_hTrans = defaultTrans;
+        }
+    }
+
+private:
+    int64_t m_id;
+    VideoClip::Holder m_hFrontClip;
+    VideoClip::Holder m_hRearClip;
+    int64_t m_start{0};
+    int64_t m_end{0};
+    VideoTransition::Holder m_hTrans;
+};
+
+bool VideoOverlap::HasOverlap(VideoClip::Holder hClip1, VideoClip::Holder hClip2)
+{
+    return (hClip1->Start() >= hClip2->Start() && hClip1->Start() < hClip2->End()) ||
+            (hClip1->End() > hClip2->Start() && hClip1->End() <= hClip2->End()) ||
+            (hClip1->Start() < hClip2->Start() && hClip1->End() > hClip2->End());
+}
+
+VideoOverlap::Holder VideoOverlap::CreateInstance(int64_t id, VideoClip::Holder hClip1, VideoClip::Holder hClip2)
+{
+    return VideoOverlap::Holder(new VideoOverlap_Impl(id, hClip1, hClip2), [] (VideoOverlap* p) {
+        VideoOverlap_Impl* ptr = dynamic_cast<VideoOverlap_Impl*>(p);
+        delete ptr;
+    });
+}
+
+std::ostream& operator<<(std::ostream& os, VideoOverlap::Holder hOverlap)
+{
+    os << "{'id':" << hOverlap->Id() << ", 'start':" << hOverlap->Start() << ", 'dur':" << hOverlap->Duration() << "}";
+    return os;
+}
 }

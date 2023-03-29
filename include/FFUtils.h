@@ -243,4 +243,4 @@ namespace FFUtils
 
 #include "MediaInfo.h"
 
-MediaInfo::InfoHolder GenerateMediaInfoByAVFormatContext(const AVFormatContext* avfmtCtx);
+MediaCore::MediaInfo::Holder GenerateMediaInfoByAVFormatContext(const AVFormatContext* avfmtCtx);

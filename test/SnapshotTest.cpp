@@ -4,8 +4,8 @@
 #include <ImGuiFileDialog.h>
 #include <string>
 #include <sstream>
-#include "MediaOverview.h"
-#include "SnapshotGenerator.h"
+#include "Overview.h"
+#include "Snapshot.h"
 #include "FFUtils.h"
 #include "Logger.h"
 #include "DebugHelper.h"
@@ -14,9 +14,9 @@ using namespace std;
 using namespace MediaCore;
 using namespace Logger;
 
-static MediaOverview* g_movr = nullptr;
-static SnapshotGeneratorHolder g_ssgen;
-static SnapshotGenerator::ViewerHolder g_ssvw1;
+static Overview::Holder g_movr;
+static Snapshot::Generator::Holder g_ssgen;
+static Snapshot::Viewer::Holder g_ssvw1;
 static double g_windowPos = 0.f;
 static double g_windowSize = 300.f;
 static double g_windowFrames = 14.0f;
@@ -29,9 +29,9 @@ static void MediaSnapshot_Initialize(void** handle)
 {
     GetDefaultLogger()
         ->SetShowLevels(DEBUG);
-    GetMediaParserLogger()
+    MediaParser::GetLogger()
         ->SetShowLevels(DEBUG);
-    GetSnapshotGeneratorLogger()
+    Snapshot::GetLogger()
         ->SetShowLevels(DEBUG);
 
 #ifdef USE_BOOKMARK
@@ -50,9 +50,9 @@ static void MediaSnapshot_Initialize(void** handle)
     io.IniFilename = c_imguiIniPath.c_str();
 
     size_t ssCnt = (size_t)ceil(g_windowFrames)+1;
-    g_movr = CreateMediaOverview();
+    g_movr = Overview::CreateInstance();
     g_movr->SetSnapshotSize(320, 180);
-    g_ssgen = CreateSnapshotGenerator();
+    g_ssgen = Snapshot::Generator::CreateInstance();
     g_ssgen->SetSnapshotResizeFactor(0.5f, 0.5f);
     g_ssgen->SetCacheFactor(3);
     g_ssvw1 = g_ssgen->CreateViewer(0);
@@ -62,7 +62,7 @@ static void MediaSnapshot_Finalize(void** handle)
 {
     g_ssgen->ReleaseViewer(g_ssvw1);
     g_ssgen = nullptr;
-    ReleaseMediaOverview(&g_movr);
+    g_movr = nullptr;
 #ifdef USE_BOOKMARK
 	// save bookmarks
 	ofstream configFileWriter(c_bookmarkPath, ios::out);
@@ -116,7 +116,7 @@ static bool MediaSnapshot_Frame(void * handle, bool app_will_quit)
 
         ImGui::Spacing();
 
-        vector<SnapshotGenerator::ImageHolder> snapshots;
+        vector<Snapshot::Image::Holder> snapshots;
         // auto t0 = GetTimePoint();
         bool ret = g_ssvw1->GetSnapshots(pos, snapshots);
         // auto t1 = GetTimePoint();

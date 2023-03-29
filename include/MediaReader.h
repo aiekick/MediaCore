@@ -16,15 +16,25 @@
 */
 
 #pragma once
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <utility>
 #include "immat.h"
 #include "MediaCore.h"
 #include "MediaParser.h"
 #include "Logger.h"
 
+namespace MediaCore
+{
 struct MediaReader
 {
+    using Holder = std::shared_ptr<MediaReader>;
+    static MEDIACORE_API Holder CreateInstance(const std::string& loggerName = "");
+    static Logger::ALogger* GetLogger();
+
     virtual bool Open(const std::string& url) = 0;
-    virtual bool Open(MediaParserHolder hParser) = 0;
+    virtual bool Open(MediaParser::Holder hParser) = 0;
     virtual bool ConfigVideoReader(
             uint32_t outWidth, uint32_t outHeight,
             ImColorFormat outClrfmt = IM_CF_RGBA, ImInterpolateMode rszInterp = IM_INTERPOLATE_BICUBIC) = 0;
@@ -47,7 +57,7 @@ struct MediaReader
     virtual uint32_t Id() const = 0;
     virtual bool IsOpened() const = 0;
     virtual bool IsStarted() const = 0;
-    virtual MediaParserHolder GetMediaParser() const = 0;
+    virtual MediaParser::Holder GetMediaParser() const = 0;
     virtual bool IsVideoReader() const = 0;
     virtual bool IsDirectionForward() const = 0;
     virtual bool IsSuspended() const = 0;
@@ -56,9 +66,9 @@ struct MediaReader
     virtual bool SetCacheDuration(double forwardDur, double backwardDur) = 0;
     virtual std::pair<double, double> GetCacheDuration() const = 0;
 
-    virtual MediaInfo::InfoHolder GetMediaInfo() const = 0;
-    virtual const MediaInfo::VideoStream* GetVideoStream() const = 0;
-    virtual const MediaInfo::AudioStream* GetAudioStream() const = 0;
+    virtual MediaInfo::Holder GetMediaInfo() const = 0;
+    virtual const VideoStream* GetVideoStream() const = 0;
+    virtual const AudioStream* GetAudioStream() const = 0;
     virtual uint32_t GetVideoOutWidth() const = 0;
     virtual uint32_t GetVideoOutHeight() const = 0;
     virtual std::string GetAudioOutPcmFormat() const = 0;
@@ -70,8 +80,4 @@ struct MediaReader
     virtual void EnableHwAccel(bool enable) = 0;
     virtual std::string GetError() const = 0;
 };
-
-MEDIACORE_API MediaReader* CreateMediaReader(const std::string& loggerName = "");
-MEDIACORE_API void ReleaseMediaReader(MediaReader** mreader);
-
-MEDIACORE_API Logger::ALogger* GetMediaReaderLogger();
+}

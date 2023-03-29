@@ -24,7 +24,7 @@ using namespace MediaCore;
 using namespace Logger;
 
 SubtitleClip_AssImpl::SubtitleClip_AssImpl(ASS_Event* assEvent, ASS_Track* assTrack, AssRenderCallback renderCb)
-    : m_type(MediaCore::ASS), m_assEvent(assEvent), m_assTrack(assTrack), m_renderCb(renderCb)
+    : m_type(SubtitleType::ASS), m_assEvent(assEvent), m_assTrack(assTrack), m_renderCb(renderCb)
     , m_readOrder(assEvent->ReadOrder), m_trackStyle(assTrack->styles[assEvent->Style].Name)
     , m_text(string(assEvent->Text))
 {}

@@ -20,10 +20,11 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include "MediaCore.h"
 
-namespace MediaInfo
+namespace MediaCore
 {
-    enum Type
+    enum class MediaType
     {
         UNKNOWN = 0,
         VIDEO,
@@ -35,23 +36,26 @@ namespace MediaInfo
     {
         int32_t num{0};
         int32_t den{0};
+
+        static inline bool IsValid(const Ratio& r)
+        { return r.num != 0 && r.den != 0; }
     };
 
     struct Stream
     {
+        using Holder = std::shared_ptr<Stream>;
         virtual ~Stream() {}
-        Type type{UNKNOWN};
+
+        MediaType type{MediaType::UNKNOWN};
         uint64_t bitRate{0};
         double startTime;
         double duration;
         Ratio timebase;
     };
 
-    using StreamHolder = std::shared_ptr<Stream>;
-
     struct VideoStream : public Stream
     {
-        VideoStream() { type = VIDEO; }
+        VideoStream() { type = MediaType::VIDEO; }
         uint32_t width{0};
         uint32_t height{0};
         std::string format;
@@ -66,7 +70,7 @@ namespace MediaInfo
 
     struct AudioStream : public Stream
     {
-        AudioStream() { type = AUDIO; }
+        AudioStream() { type = MediaType::AUDIO; }
         uint32_t channels{0};
         uint32_t sampleRate{0};
         std::string format;
@@ -75,20 +79,18 @@ namespace MediaInfo
 
     struct SubtitleStream : public Stream
     {
-        SubtitleStream() { type = SUBTITLE; }
+        SubtitleStream() { type = MediaType::SUBTITLE; }
     };
 
-    struct Info
+    struct MediaInfo
     {
+        using Holder = std::shared_ptr<MediaInfo>;
+        virtual ~MediaInfo() {}
+
         std::string url;
-        std::vector<StreamHolder> streams;
+        std::vector<Stream::Holder> streams;
         double startTime{0};
         double duration{-1};
         bool isComplete{true};
     };
-
-    using InfoHolder = std::shared_ptr<Info>;
-
-    inline bool IsRatioValid(const Ratio& r)
-    { return r.num != 0 && r.den != 0; }
 }

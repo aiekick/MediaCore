@@ -200,12 +200,12 @@ void sdl_audio_callback(void *opaque, Uint8 *stream, int len)
     audrnd->ReadPcm(stream, len);
 }
 
-AudioRender* CreateAudioRender()
+AudioRender* AudioRender::CreateInstance()
 {
     return static_cast<AudioRender*>(new AudioRender_Impl_Sdl2());
 }
 
-void ReleaseAudioRender(AudioRender** audrnd)
+void AudioRender::ReleaseInstance(AudioRender** audrnd)
 {
     if (!audrnd)
         return;
