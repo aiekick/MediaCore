@@ -439,6 +439,16 @@ public:
             clip->SetDirection(forward);
     }
 
+    void SetVisible(bool visible) override
+    {
+        m_visible = visible;
+    }
+
+    bool IsVisible() const override
+    {
+        return m_visible;
+    }
+
     VideoClip::Holder GetClipByIndex(uint32_t index) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
@@ -555,6 +565,7 @@ private:
     int64_t m_readFrames{0};
     int64_t m_duration{0};
     bool m_readForward{true};
+    bool m_visible{true};
 };
 
 static const auto VIDEO_TRACK_HOLDER_DELETER = [] (VideoTrack* p) {

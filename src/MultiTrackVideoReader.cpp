@@ -337,6 +337,28 @@ public:
         return true;
     }
 
+    bool SetTrackVisible(int64_t id, bool visible) override
+    {
+        auto track = GetTrackById(id, false);
+        if (track)
+        {
+            track->SetVisible(visible);
+            return true;
+        }
+        ostringstream oss;
+        oss << "Track with id=" << id << " does NOT EXIST!";
+        m_errMsg = oss.str();
+        return false;
+    }
+
+    bool IsTrackVisible(int64_t id) override
+    {
+        auto track = GetTrackById(id, false);
+        if (track)
+            return track->IsVisible();
+        return false;
+    }
+
     bool ReadVideoFrameEx(int64_t pos, std::vector<CorrelativeFrame>& frames, bool nonblocking, bool precise) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
@@ -849,7 +871,7 @@ private:
                     {
                         ImGui::ImMat vmat;
                         (*trackIter)->ReadVideoFrame(frames, vmat);
-                        if (!vmat.empty())
+                        if (!vmat.empty() && (*trackIter)->IsVisible())
                         {
                             if (mixedFrame.empty())
                                 mixedFrame = vmat;

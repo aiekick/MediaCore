@@ -28,28 +28,7 @@ struct VideoTrack
 {
     using Holder = std::shared_ptr<VideoTrack>;
     static MEDIACORE_API Holder CreateInstance(int64_t id, uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate);
-
     virtual Holder Clone(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) = 0;
-    virtual VideoClip::Holder AddNewClip(int64_t clipId, MediaParser::Holder hParser, int64_t start, int64_t startOffset, int64_t endOffset, int64_t readPos) = 0;
-    virtual void InsertClip(VideoClip::Holder hClip) = 0;
-    virtual void MoveClip(int64_t id, int64_t start) = 0;
-    virtual void ChangeClipRange(int64_t id, int64_t startOffset, int64_t endOffset) = 0;
-    virtual VideoClip::Holder RemoveClipById(int64_t clipId) = 0;
-    virtual VideoClip::Holder RemoveClipByIndex(uint32_t index) = 0;
-
-    virtual VideoClip::Holder GetClipByIndex(uint32_t index) = 0;
-    virtual VideoClip::Holder GetClipById(int64_t id) = 0;
-    virtual VideoOverlap::Holder GetOverlapById(int64_t id) = 0;
-    virtual uint32_t ClipCount() const = 0;
-    virtual std::list<VideoClip::Holder>::iterator ClipListBegin() = 0;
-    virtual std::list<VideoClip::Holder>::iterator ClipListEnd() = 0;
-    virtual uint32_t OverlapCount() const = 0;
-    virtual std::list<VideoOverlap::Holder>::iterator OverlapListBegin() = 0;
-    virtual std::list<VideoOverlap::Holder>::iterator OverlapListEnd() = 0;
-
-    virtual void SeekTo(int64_t pos) = 0;
-    virtual void ReadVideoFrame(std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out) = 0;
-    virtual void SetDirection(bool forward) = 0;
 
     virtual int64_t Id() const = 0;
     virtual uint32_t OutWidth() const = 0;
@@ -57,7 +36,29 @@ struct VideoTrack
     virtual Ratio FrameRate() const = 0;
     virtual int64_t Duration() const = 0;
     virtual int64_t ReadPos() const = 0;
+    virtual void SetDirection(bool forward) = 0;
     virtual bool Direction() const = 0;
+    virtual void SetVisible(bool visible) = 0;
+    virtual bool IsVisible() const = 0;
+    virtual void ReadVideoFrame(std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out) = 0;
+    virtual void SeekTo(int64_t pos) = 0;
+
+    virtual VideoClip::Holder AddNewClip(int64_t clipId, MediaParser::Holder hParser, int64_t start, int64_t startOffset, int64_t endOffset, int64_t readPos) = 0;
+    virtual void InsertClip(VideoClip::Holder hClip) = 0;
+    virtual void MoveClip(int64_t id, int64_t start) = 0;
+    virtual void ChangeClipRange(int64_t id, int64_t startOffset, int64_t endOffset) = 0;
+    virtual VideoClip::Holder RemoveClipById(int64_t clipId) = 0;
+    virtual VideoClip::Holder RemoveClipByIndex(uint32_t index) = 0;
+    virtual VideoClip::Holder GetClipByIndex(uint32_t index) = 0;
+    virtual VideoClip::Holder GetClipById(int64_t id) = 0;
+    virtual VideoOverlap::Holder GetOverlapById(int64_t id) = 0;
+
+    virtual uint32_t ClipCount() const = 0;
+    virtual std::list<VideoClip::Holder>::iterator ClipListBegin() = 0;
+    virtual std::list<VideoClip::Holder>::iterator ClipListEnd() = 0;
+    virtual uint32_t OverlapCount() const = 0;
+    virtual std::list<VideoOverlap::Holder>::iterator OverlapListBegin() = 0;
+    virtual std::list<VideoOverlap::Holder>::iterator OverlapListEnd() = 0;
 };
 
 MEDIACORE_API std::ostream& operator<<(std::ostream& os, VideoTrack::Holder hTrack);

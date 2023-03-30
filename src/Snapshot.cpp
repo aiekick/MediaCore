@@ -1194,7 +1194,7 @@ private:
                         {
                             if (ss->bias < (*imgIter)->bias)
                                 *imgIter = ss;
-                            else
+                            else if (ss->bias > (*imgIter)->bias)
                                 m_logger->Log(WARN) << "DISCARD SS Image #" << ss->index << ", pts=" << ss->pts << "(" << MillisecToString(CvtVidPtsToMts(ss->pts))
                                     << ") due to an EXISTING BETTER SS Image, pts=" << (*imgIter)->pts << "(" << MillisecToString(CvtVidPtsToMts((*imgIter)->pts))
                                     << "), bias " << ss->bias << "(new) >= " << (*imgIter)->bias << "." << endl;
