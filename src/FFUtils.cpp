@@ -35,6 +35,49 @@ extern "C"
     #include "libavfilter/buffersink.h"
 }
 
+#define YUV_CONVERT_PLANAR  1
+
+#define ISYUV420P(format)   \
+(format == AV_PIX_FMT_YUV420P || \
+    format == AV_PIX_FMT_YUVJ420P || \
+    format == AV_PIX_FMT_YUV420P9 || \
+    format == AV_PIX_FMT_YUV420P10 || \
+    format == AV_PIX_FMT_YUV420P12 || \
+    format == AV_PIX_FMT_YUV420P14 || \
+    format == AV_PIX_FMT_YUV420P16)
+
+#define ISYUV422P(format) \
+    (format == AV_PIX_FMT_YUV422P || \
+    format == AV_PIX_FMT_YUVJ422P || \
+    format == AV_PIX_FMT_YUV422P9 || \
+    format == AV_PIX_FMT_YUV422P10 || \
+    format == AV_PIX_FMT_YUV422P12 || \
+    format == AV_PIX_FMT_YUV422P14 || \
+    format == AV_PIX_FMT_YUV422P16)
+
+#define ISYUV444P(format) \
+    (format == AV_PIX_FMT_YUV444P || \
+    format == AV_PIX_FMT_YUVJ420P || \
+    format == AV_PIX_FMT_YUV444P9 || \
+    format == AV_PIX_FMT_YUV444P10 || \
+    format == AV_PIX_FMT_YUV444P12 || \
+    format == AV_PIX_FMT_YUV444P14 || \
+    format == AV_PIX_FMT_YUV444P16)
+
+#define ISNV12(format) \
+    (format == AV_PIX_FMT_NV12 || \
+    format == AV_PIX_FMT_NV21 || \
+    format == AV_PIX_FMT_NV16 || \
+    format == AV_PIX_FMT_NV20LE || \
+    format == AV_PIX_FMT_NV20BE || \
+    format == AV_PIX_FMT_P010LE || \
+    format == AV_PIX_FMT_P010BE || \
+    format == AV_PIX_FMT_P016LE || \
+    format == AV_PIX_FMT_P016BE || \
+    format == AV_PIX_FMT_NV24 || \
+    format == AV_PIX_FMT_NV42 || \
+    format == AV_PIX_FMT_NV20)
+
 using namespace std;
 using namespace Logger;
 
@@ -498,6 +541,87 @@ bool ConvertAVFrameToImMat(const AVFrame* avfrm, ImGui::ImMat& vmat, double time
     return true;
 }
 
+bool ConvertAVFrameToImMat(const AVFrame* avfrm, std::vector<ImGui::ImMat>& vmat, double timestamp)
+{
+    SelfFreeAVFramePtr swfrm;
+    if (IsHwFrame(avfrm))
+    {
+        swfrm = AllocSelfFreeAVFramePtr();
+        if (!swfrm)
+        {
+            Log(Error) << "FAILED to allocate new AVFrame for ImMat conversion!" << endl;
+            return false;
+        }
+        if (!HwFrameToSwFrame(swfrm.get(), avfrm))
+            return false;
+        avfrm = swfrm.get();
+    }
+
+    const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get((AVPixelFormat)avfrm->format);
+    if (desc->nb_components <= 0 || desc->nb_components > 4)
+    {
+        Log(Error) << "INVALID 'nb_component' value " << desc->nb_components << " of pixel format '"
+            << desc->name << "', can only support value from 1 ~ 4." << endl;
+        return false;
+    }
+    bool isRgb = (desc->flags&AV_PIX_FMT_FLAG_RGB) > 0;
+
+    int bitDepth = desc->comp[0].depth;
+    ImColorSpace color_space =  avfrm->colorspace == AVCOL_SPC_BT470BG ||
+                                avfrm->colorspace == AVCOL_SPC_SMPTE170M ||
+                                avfrm->colorspace == AVCOL_SPC_BT470BG ? IM_CS_BT601 :
+                                avfrm->colorspace == AVCOL_SPC_BT709 ? IM_CS_BT709 :
+                                avfrm->colorspace == AVCOL_SPC_BT2020_NCL ||
+                                avfrm->colorspace == AVCOL_SPC_BT2020_CL ? IM_CS_BT2020 : IM_CS_BT709;
+    ImColorRange color_range =  avfrm->color_range == AVCOL_RANGE_MPEG ? IM_CR_NARROW_RANGE :
+                                avfrm->color_range == AVCOL_RANGE_JPEG ? IM_CR_FULL_RANGE : IM_CR_NARROW_RANGE;
+    ImColorFormat clrfmt = ConvertPixelFormatToColorFormat((AVPixelFormat)avfrm->format);
+    if ((int)clrfmt < 0)
+        return false;
+    
+    ImColorFormat color_format = clrfmt;
+    const int width = avfrm->linesize[0] / (desc->comp[0].step > 0 ? desc->comp[0].step : 1);
+    const int height = avfrm->height;
+    int channel = ISNV12(avfrm->format) ? 2 : desc->nb_components;
+    ImDataType dataType = bitDepth > 8 ? IM_DT_INT16 : IM_DT_INT8;
+    for (int i = 0; i < desc->nb_components; i++)
+    {
+        ImGui::ImMat mat_component;
+        int chWidth = width;
+        int chHeight = height;
+        if ((desc->flags&AV_PIX_FMT_FLAG_RGB) == 0 && i > 0)
+        {
+            chWidth >>= desc->log2_chroma_w;
+            chHeight >>= desc->log2_chroma_h;
+        }
+        if (ISNV12(avfrm->format) && i > 0)
+            chWidth <<= 1;
+        
+        if (desc->nb_components > i && desc->comp[i].plane == i)
+        {
+            uint8_t* src_data = avfrm->data[i]+desc->comp[i].offset;
+            if (i < channel)
+                mat_component.create_type(chWidth, chHeight, 1, src_data, dataType);
+            vmat.push_back(mat_component);
+        }
+    }
+    if (!vmat.empty())
+    {
+        vmat[0].color_space = color_space;
+        vmat[0].color_range = color_range;
+        vmat[0].color_format = color_format;
+        vmat[0].depth = bitDepth;
+        vmat[0].flags = IM_MAT_FLAGS_VIDEO_FRAME;
+        if (avfrm->pict_type == AV_PICTURE_TYPE_I) vmat[0].flags |= IM_MAT_FLAGS_VIDEO_FRAME_I;
+        if (avfrm->pict_type == AV_PICTURE_TYPE_P) vmat[0].flags |= IM_MAT_FLAGS_VIDEO_FRAME_P;
+        if (avfrm->pict_type == AV_PICTURE_TYPE_B) vmat[0].flags |= IM_MAT_FLAGS_VIDEO_FRAME_B;
+        if (avfrm->interlaced_frame) vmat[0].flags |= IM_MAT_FLAGS_VIDEO_INTERLACED;
+        vmat[0].time_stamp = timestamp;
+        return true;
+    }
+    return false;
+}
+
 bool ConvertImMatToAVFrame(const ImGui::ImMat& vmat, AVFrame* avfrm, int64_t pts)
 {
     if (vmat.device != IM_DD_CPU)
@@ -681,6 +805,41 @@ bool AVFrameToImMatConverter::ConvertImage(const AVFrame* avfrm, ImGui::ImMat& o
     if (m_useVulkanComponents)
     {
 #if IMGUI_VULKAN_SHADER
+#if YUV_CONVERT_PLANAR
+        std::vector<ImGui::ImMat> inMat;
+        if (!ConvertAVFrameToImMat(avfrm, inMat, timestamp))
+        {
+            m_errMsg = "Failed to invoke 'ConvertAVFrameToImMat()'!";
+            return false;
+        }
+
+        if (inMat[0].color_format == IM_CF_ABGR || inMat[0].color_format == IM_CF_ARGB ||
+            inMat[0].color_format == IM_CF_RGBA || inMat[0].color_format == IM_CF_BGRA)
+        {
+            // TODO::Dicky RGB planar
+            //outMat = inMat;
+            outMat.time_stamp = timestamp;
+            return false;
+        }
+        // YUV -> RGB
+        ImGui::VkMat rgbMat;
+        rgbMat.type = IM_DT_INT8;
+        rgbMat.color_format = IM_CF_ABGR;
+        rgbMat.w = m_outWidth;
+        rgbMat.h = m_outHeight;
+        m_imgClrCvt->YUV2RGBA(inMat[0], inMat[1], inMat.size() > 2 ? inMat[2] : ImGui::ImMat(), rgbMat, m_resizeInterp);
+        if (m_outputCpuMat && rgbMat.device == IM_DD_VULKAN)
+        {
+            outMat.type = IM_DT_INT8;
+            m_imgClrCvt->Conv(rgbMat, outMat);
+        }
+        else
+            outMat = rgbMat;
+        outMat.time_stamp = timestamp;
+        outMat.rate = inMat[0].rate;
+        outMat.flags = inMat[0].flags;
+        outMat.duration = inMat[0].duration;
+#else // YUV_CONVERT_NON_PLANAR
         // AVFrame -> ImMat
         ImGui::ImMat inMat;
         if (!ConvertAVFrameToImMat(avfrm, inMat, timestamp))
@@ -715,6 +874,10 @@ bool AVFrameToImMatConverter::ConvertImage(const AVFrame* avfrm, ImGui::ImMat& o
         else
             outMat = rgbMat;
         outMat.time_stamp = timestamp;
+        outMat.rate = inMat.rate;
+        outMat.flags = inMat.flags;
+        outMat.duration = inMat.duration;
+#endif // YUV_CONVERT_PLANAR
         return true;
 #else
         m_errMsg = "Vulkan shader components is NOT ENABLED!";
