@@ -108,6 +108,9 @@ namespace MediaCore
         virtual bool SetEqualizerParamsByIndex(EqualizerParams* params, uint32_t index) = 0;
         virtual EqualizerParams GetEqualizerParamsByIndex(uint32_t index) const = 0;
 
+        virtual void SetMuted(bool muted) = 0;
+        virtual bool IsMuted() const = 0;
+
         virtual std::string GetError() const = 0;
     };
 }

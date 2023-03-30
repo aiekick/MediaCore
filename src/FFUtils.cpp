@@ -1490,41 +1490,6 @@ ImGui::ImMat FFOverlayBlender::Blend(ImGui::ImMat& baseImage, ImGui::ImMat& over
     return Blend(baseImage, overlayImage, m_x, m_y, overlayImage.w, overlayImage.h);
 }
 
-static ImDataType GetImDataTypeByAVSampleFormat(AVSampleFormat smpfmt)
-{
-    ImDataType dtype = IM_DT_UNDEFINED;
-    switch (smpfmt)
-    {
-    case AV_SAMPLE_FMT_U8:
-    case AV_SAMPLE_FMT_U8P:
-        dtype = IM_DT_INT8;
-        break;
-    case AV_SAMPLE_FMT_S16:
-    case AV_SAMPLE_FMT_S16P:
-        dtype = IM_DT_INT16;
-        break;
-    case AV_SAMPLE_FMT_S32:
-    case AV_SAMPLE_FMT_S32P:
-        dtype = IM_DT_INT32;
-        break;
-    case AV_SAMPLE_FMT_FLT:
-    case AV_SAMPLE_FMT_FLTP:
-        dtype = IM_DT_FLOAT32;
-        break;
-    case AV_SAMPLE_FMT_DBL:
-    case AV_SAMPLE_FMT_DBLP:
-        dtype = IM_DT_FLOAT64;
-        break;
-    case AV_SAMPLE_FMT_S64:
-    case AV_SAMPLE_FMT_S64P:
-        dtype = IM_DT_INT64;
-        break;
-    default:
-        break;
-    }
-    return dtype;
-}
-
 static AVSampleFormat GetAVSampleFormatByImDataType(ImDataType dtype, bool isPlanar)
 {
     AVSampleFormat smpfmt = AV_SAMPLE_FMT_NONE;
@@ -1559,7 +1524,7 @@ static AVSampleFormat GetAVSampleFormatByImDataType(ImDataType dtype, bool isPla
 bool AudioImMatAVFrameConverter::ConvertAVFrameToImMat(const AVFrame* avfrm, ImGui::ImMat& amat, double timestamp)
 {
     amat.release();
-    ImDataType dtype = GetImDataTypeByAVSampleFormat((AVSampleFormat)avfrm->format);
+    ImDataType dtype = GetDataTypeFromSampleFormat((AVSampleFormat)avfrm->format);
     bool isPlanar = av_sample_fmt_is_planar((AVSampleFormat)avfrm->format) == 1;
 #if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
     const int channels = avfrm->channels;

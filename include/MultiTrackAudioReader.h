@@ -43,6 +43,8 @@ struct MultiTrackAudioReader
     virtual AudioTrack::Holder RemoveTrackById(int64_t trackId) = 0;
     virtual bool SetDirection(bool forward) = 0;
     virtual bool SeekTo(int64_t pos) = 0;
+    virtual bool SetTrackMuted(int64_t id, bool muted) = 0;
+    virtual bool IsTrackMuted(int64_t id) = 0;
     virtual bool ReadAudioSamplesEx(std::vector<CorrelativeFrame>& amats, bool& eof) = 0;
     virtual bool ReadAudioSamples(ImGui::ImMat& amat, bool& eof) = 0;
     virtual void UpdateDuration() = 0;

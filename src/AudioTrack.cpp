@@ -472,6 +472,16 @@ public:
             clip->SetDirection(forward);
     }
 
+    void SetMuted(bool muted) override
+    {
+        m_aeFilter->SetMuted(muted);
+    }
+
+    bool IsMuted() const override
+    {
+        return m_aeFilter->IsMuted();
+    }
+
     AudioClip::Holder GetClipByIndex(uint32_t index) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);

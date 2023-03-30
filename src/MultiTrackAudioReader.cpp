@@ -317,6 +317,26 @@ public:
         return true;
     }
 
+    bool SetTrackMuted(int64_t id, bool muted) override
+    {
+        auto track = GetTrackById(id, false);
+        if (track)
+        {
+            track->SetMuted(muted);
+            return true;
+        }
+        return false;
+    }
+
+    bool IsTrackMuted(int64_t id) override
+    {
+        auto track = GetTrackById(id, false);
+        if (track)
+            return track->IsMuted();
+        return false;
+    }
+
+
     bool ReadAudioSamplesEx(vector<CorrelativeFrame>& amats, bool& eof) override
     {
         amats.clear();
@@ -806,7 +826,7 @@ private:
     AudioImMatAVFrameConverter* m_matAvfrmCvter{nullptr};
     list<vector<CorrelativeFrame>> m_outputMats;
     mutex m_outputMatsLock;
-    uint32_t m_outputMatsMaxCount{32};
+    uint32_t m_outputMatsMaxCount{4};
 
     bool m_configured{false};
     bool m_started{false};

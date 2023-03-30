@@ -191,22 +191,43 @@ public:
                 {
                     ImGui::ImMat m;
                     double ts = (double)avfrm->pts/m_sampleRate;
-                    if (m_matCvter.ConvertAVFrameToImMat(avfrm.get(), m, ts))
+
+                    // handle muted state here if 'VOLUME' is not a part of the filter compsition
+                    if (!HasFilter(VOLUME) && m_currMuted)
                     {
-                        // m_logger->Log(DEBUG) << "Add output avfrm: pts=" << avfrm->pts << "; mat: ts=" << m.time_stamp << endl;
-                        m.type = m_matDt;
+                        ImDataType dtype = GetDataTypeFromSampleFormat((AVSampleFormat)avfrm->format);
+                        bool isPlanar = av_sample_fmt_is_planar((AVSampleFormat)avfrm->format) == 1;
+#if !defined(FF_API_OLD_CHANNEL_LAYOUT) && (LIBAVUTIL_VERSION_MAJOR < 58)
+                        const int channels = avfrm->channels;
+#else
+                        const int channels = avfrm->ch_layout.nb_channels;
+#endif
+                        m.create_type(avfrm->nb_samples, (int)1, channels, dtype);
+                        memset(m.data, 0, m.total()*m.elemsize);
                         m.flags = IM_MAT_FLAGS_AUDIO_FRAME;
                         m.rate = { (int)m_sampleRate, 1 };
                         m.elempack = m_isPlanar ? 1 : m_channels;
-                        out.push_back(m);
+                        m.time_stamp = ts;
                     }
                     else
                     {
-                        ostringstream oss;
-                        oss << "FAILED to invoke AudioImMatAVFrameConverter::ConvertAVFrameToImMat()!";
-                        m_errMsg = oss.str();
-                        hasErr = true;
-                        break;
+                        if (m_matCvter.ConvertAVFrameToImMat(avfrm.get(), m, ts))
+                        {
+                            // m_logger->Log(DEBUG) << "Add output avfrm: pts=" << avfrm->pts << "; mat: ts=" << m.time_stamp << endl;
+                            m.type = m_matDt;
+                            m.flags = IM_MAT_FLAGS_AUDIO_FRAME;
+                            m.rate = { (int)m_sampleRate, 1 };
+                            m.elempack = m_isPlanar ? 1 : m_channels;
+                            out.push_back(m);
+                        }
+                        else
+                        {
+                            ostringstream oss;
+                            oss << "FAILED to invoke AudioImMatAVFrameConverter::ConvertAVFrameToImMat()!";
+                            m_errMsg = oss.str();
+                            hasErr = true;
+                            break;
+                        }
                     }
                 }
                 else
@@ -336,6 +357,16 @@ public:
         eqBandInfo.centerFreqList = DF_CENTER_FREQS.data();
         eqBandInfo.bandWidthList = DF_BAND_WTHS.data();
         return eqBandInfo;
+    }
+
+    void SetMuted(bool muted) override
+    {
+        m_setMuted = muted;
+    }
+
+    bool IsMuted() const override
+    {
+        return m_setMuted;
     }
 
     string GetError() const override
@@ -679,7 +710,29 @@ private:
         int fferr;
         char cmdRes[256] = {0};
         // Check VolumeParams
-        if (m_setVolumeParams.volume != m_currVolumeParams.volume)
+        if (m_setMuted != m_currMuted)
+        {
+            m_logger->Log(DEBUG) << "Change muted state: " << m_setMuted << "." << endl;;
+            m_currMuted = m_setMuted;
+            if (HasFilter(VOLUME))
+            {
+                int fferr;
+                char cmdArgs[32] = {0};
+                if (m_currMuted)
+                {
+                    snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", 0.);
+                    fferr = avfilter_graph_send_command(m_filterGraph, "volume", "volume", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
+                }
+                else
+                {
+                    snprintf(cmdArgs, sizeof(cmdArgs)-1, "%f", m_currVolumeParams.volume);
+                    fferr = avfilter_graph_send_command(m_filterGraph, "volume", "volume", cmdArgs, cmdRes, sizeof(cmdRes)-1, 0);
+                }
+                if (fferr < 0)
+                    m_logger->Log(WARN) << "FAILED set muted state as " << m_currMuted << "! Set 'volume' param failed with returned fferr=" << fferr << "." << endl;
+            }
+        }
+        if (!m_currMuted && m_setVolumeParams.volume != m_currVolumeParams.volume)
         {
             m_logger->Log(DEBUG) << "Change VolumeParams::volume: " << m_currVolumeParams.volume << " -> " << m_setVolumeParams.volume << " ... ";
             char cmdArgs[32] = {0};
@@ -1158,6 +1211,7 @@ private:
     GateParams m_setGateParams, m_currGateParams;
     CompressorParams m_setCompressorParams, m_currCompressorParams;
     std::vector<EqualizerParams> m_setEqualizerParamsList, m_currEqualizerParamsList;
+    bool m_setMuted{false}, m_currMuted{false};
 
     AudioImMatAVFrameConverter m_matCvter;
     string m_errMsg;
