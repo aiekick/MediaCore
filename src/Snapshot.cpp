@@ -29,6 +29,7 @@
 #include "imgui_helper.h"
 #include "Snapshot.h"
 #include "FFUtils.h"
+#include "SysUtils.h"
 #include "DebugHelper.h"
 extern "C"
 {
@@ -1216,11 +1217,18 @@ private:
 
     void StartAllThreads()
     {
+        string fileName = SysUtils::ExtractFileName(m_hParser->GetUrl());
+        ostringstream thnOss;
         m_quit = false;
         m_demuxThread = thread(&Generator_Impl::DemuxThreadProc, this);
-        if (HasVideo())
-            m_viddecThread = thread(&Generator_Impl::VideoDecodeThreadProc, this);
+        thnOss << "SsgDmx-" << fileName;
+        SysUtils::SetThreadName(m_demuxThread, thnOss.str());
+        m_viddecThread = thread(&Generator_Impl::VideoDecodeThreadProc, this);
+        thnOss.str(""); thnOss << "SsgVdc-" << fileName;
+        SysUtils::SetThreadName(m_viddecThread, thnOss.str());
         m_updateSsThread = thread(&Generator_Impl::UpdateSnapshotThreadProc, this);
+        thnOss.str(""); thnOss << "SsgUss-" << fileName;
+        SysUtils::SetThreadName(m_updateSsThread, thnOss.str());
     }
 
     void WaitAllThreadsQuit()

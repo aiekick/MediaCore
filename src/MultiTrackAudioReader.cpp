@@ -23,6 +23,7 @@
 #include "AudioTrack.h"
 #include "MultiTrackAudioReader.h"
 #include "FFUtils.h"
+#include "SysUtils.h"
 extern "C"
 {
     #include "libavutil/avutil.h"
@@ -521,6 +522,7 @@ private:
     {
         m_quit = false;
         m_mixingThread = thread(&MultiTrackAudioReader_Impl::MixingThreadProc, this);
+        SysUtils::SetThreadName(m_mixingThread, "MtaMixing");
     }
 
     void TerminateMixingThread()

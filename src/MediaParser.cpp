@@ -26,6 +26,7 @@
 #include <sstream>
 #include "MediaParser.h"
 #include "FFUtils.h"
+#include "SysUtils.h"
 extern "C"
 {
     #include "libavutil/avutil.h"
@@ -317,6 +318,11 @@ private:
 
     bool ParseGeneralMediaInfo(TaskHolder hTask)
     {
+        string fileName = SysUtils::ExtractFileName(m_url);
+        ostringstream thnOss;
+        thnOss << "PsrTsk-" << fileName;
+        SysUtils::SetThreadName(m_taskThread, thnOss.str());
+
         int fferr = 0;
         fferr = av_opt_set_int(m_avfmtCtx, "probesize", 5000, 0);
         if (fferr < 0)

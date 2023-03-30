@@ -22,6 +22,7 @@
 #include "MultiTrackVideoReader.h"
 #include "VideoBlender.h"
 #include "FFUtils.h"
+#include "SysUtils.h"
 
 using namespace std;
 using namespace Logger;
@@ -824,6 +825,7 @@ private:
     {
         m_quit = false;
         m_mixingThread = thread(&MultiTrackVideoReader_Impl::MixingThreadProc, this);
+        SysUtils::SetThreadName(m_mixingThread, "MtvMixing");
     }
 
     void TerminateMixingThread()

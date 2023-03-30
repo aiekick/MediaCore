@@ -24,6 +24,7 @@
 #include <list>
 #include "MediaReader.h"
 #include "FFUtils.h"
+#include "SysUtils.h"
 extern "C"
 {
     #include "libavutil/avutil.h"
@@ -1166,21 +1167,35 @@ private:
 
     void StartAllThreads()
     {
+        string fileName = SysUtils::ExtractFileName(m_hParser->GetUrl());
+        ostringstream thnOss;
         m_quitThread = false;
         m_demuxThread = thread(&MediaReader_Impl::DemuxThreadProc, this);
+        thnOss << (m_isVideoReader ? "V" : "A") << "rdrDmx-" << fileName;
+        SysUtils::SetThreadName(m_demuxThread, thnOss.str());
         if (m_isVideoReader)
         {
             m_viddecThread = thread(&MediaReader_Impl::VideoDecodeThreadProc, this);
-            m_updateCfThread = thread(&MediaReader_Impl::GenerateVideoFrameThreadProc, this);
+            thnOss.str(""); thnOss << "VrdrVdc-" << fileName;
+            SysUtils::SetThreadName(m_viddecThread, thnOss.str());
+            m_genVfThread = thread(&MediaReader_Impl::GenerateVideoFrameThreadProc, this);
+            thnOss.str(""); thnOss << "VrdrGvf-" << fileName;
+            SysUtils::SetThreadName(m_genVfThread, thnOss.str());
         }
         else
         {
             m_auddecThread = thread(&MediaReader_Impl::AudioDecodeThreadProc, this);
-            m_swrThread = thread(&MediaReader_Impl::GenerateAudioSamplesThreadProc, this);
+            thnOss.str(""); thnOss << "ArdrAdc-" << fileName;
+            SysUtils::SetThreadName(m_auddecThread, thnOss.str());
+            m_genAfThread = thread(&MediaReader_Impl::GenerateAudioSamplesThreadProc, this);
+            thnOss.str(""); thnOss << "ArdrGaf-" << fileName;
+            SysUtils::SetThreadName(m_genAfThread, thnOss.str());
         }
         if (m_isImage)
         {
             m_releaseThread = thread(&MediaReader_Impl::ReleaseResourceProc, this);
+            thnOss << "VrdrRls-" << fileName;
+            SysUtils::SetThreadName(m_releaseThread, thnOss.str());
         }
     }
 
@@ -1202,20 +1217,20 @@ private:
             m_viddecThread.join();
             m_viddecThread = thread();
         }
-        if (m_updateCfThread.joinable())
+        if (m_genVfThread.joinable())
         {
-            m_updateCfThread.join();
-            m_updateCfThread = thread();
+            m_genVfThread.join();
+            m_genVfThread = thread();
         }
         if (m_auddecThread.joinable())
         {
             m_auddecThread.join();
             m_auddecThread = thread();
         }
-        if (m_swrThread.joinable())
+        if (m_genAfThread.joinable())
         {
-            m_swrThread.join();
-            m_swrThread = thread();
+            m_genAfThread.join();
+            m_genAfThread = thread();
         }
     }
 
@@ -3258,11 +3273,11 @@ private:
     // video decoding thread
     thread m_viddecThread;
     // update snapshots thread
-    thread m_updateCfThread;
+    thread m_genVfThread;
     // audio decoding thread
     thread m_auddecThread;
     // swr thread
-    thread m_swrThread;
+    thread m_genAfThread;
     // release resource thread
     thread m_releaseThread;
 

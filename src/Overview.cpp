@@ -21,6 +21,7 @@
 #include <list>
 #include "Overview.h"
 #include "FFUtils.h"
+#include "SysUtils.h"
 extern "C"
 {
     #include "libavutil/avutil.h"
@@ -599,18 +600,32 @@ private:
 
     void StartAllThreads()
     {
+        string fileName = SysUtils::ExtractFileName(m_hParser->GetUrl());
+        ostringstream thnOss;
         m_quit = false;
         if (HasVideo())
         {
             m_demuxVidThread = thread(&Overview_Impl::DemuxVideoThreadProc, this);
+            thnOss.str(""); thnOss << "OvwVdmx-" << fileName;
+            SysUtils::SetThreadName(m_demuxVidThread, thnOss.str());
             m_viddecThread = thread(&Overview_Impl::VideoDecodeThreadProc, this);
+            thnOss.str(""); thnOss << "OvwVdc-" << fileName;
+            SysUtils::SetThreadName(m_viddecThread, thnOss.str());
             m_genSsThread = thread(&Overview_Impl::GenerateSsThreadProc, this);
+            thnOss.str(""); thnOss << "OvwGss-" << fileName;
+            SysUtils::SetThreadName(m_genSsThread, thnOss.str());
         }
         if (HasAudio())
         {
             m_demuxAudThread = thread(&Overview_Impl::DemuxAudioThreadProc, this);
+            thnOss.str(""); thnOss << "OvwAdmx-" << fileName;
+            SysUtils::SetThreadName(m_demuxAudThread, thnOss.str());
             m_auddecThread = thread(&Overview_Impl::AudioDecodeThreadProc, this);
+            thnOss.str(""); thnOss << "OvwAdc-" << fileName;
+            SysUtils::SetThreadName(m_auddecThread, thnOss.str());
             m_genWfThread = thread(&Overview_Impl::GenWaveformThreadProc, this);
+            thnOss.str(""); thnOss << "OvwGwf-" << fileName;
+            SysUtils::SetThreadName(m_genWfThread, thnOss.str());
         }
         m_releaseThread = thread(&Overview_Impl::ReleaseResourceProc, this);
     }

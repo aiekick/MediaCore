@@ -23,6 +23,7 @@
 #include <algorithm>
 #include "MediaEncoder.h"
 #include "FFUtils.h"
+#include "SysUtils.h"
 extern "C"
 {
     #include "libavutil/avutil.h"
@@ -987,12 +988,24 @@ private:
 
     void StartAllThreads()
     {
+        string fileName = SysUtils::ExtractFileName(m_avfmtCtx->url);
+        ostringstream thnOss;
         m_quit = false;
         if (HasVideo())
+        {
             m_videncThread = thread(&MediaEncoder_Impl::VideoEncodingThreadProc, this);
+            thnOss << "EncVenc-" << fileName;
+            SysUtils::SetThreadName(m_videncThread, thnOss.str());
+        }
         if (HasAudio())
+        {
             m_audencThread = thread(&MediaEncoder_Impl::AudioEncodingThreadProc, this);
+            thnOss.str(""); thnOss << "EncAenc-" << fileName;
+            SysUtils::SetThreadName(m_audencThread, thnOss.str());
+        }
         m_muxThread = thread(&MediaEncoder_Impl::MuxingThreadProc, this);
+        thnOss.str(""); thnOss << "EncMux-" << fileName;
+        SysUtils::SetThreadName(m_muxThread, thnOss.str());
     }
 
     void TerminateAllThreads()
