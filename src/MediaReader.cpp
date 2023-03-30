@@ -1244,95 +1244,66 @@ private:
     {
         UpdateCacheWindow(ts);
 
-        GopDecodeTaskHolder targetTask;
-        do
+        bool foundBestFrame = false;
+        VideoFrame* pBestCandidate = nullptr;
+        int64_t pts = CvtMtsToPts(ts*1000);
+        while (!m_close)
         {
+            // find the tasks the required frame may possibly reside in
+            list<GopDecodeTaskHolder> targetTasks;
             {
                 lock_guard<mutex> lk(m_bldtskByTimeLock);
-                auto iter = find_if(m_bldtskTimeOrder.begin(), m_bldtskTimeOrder.end(), [this, ts](const GopDecodeTaskHolder& task) {
-                    int64_t pts = CvtMtsToPts(ts*1000);
-                    return task->seekPts.first <= pts && task->seekPts.second > pts;
-                });
-                if (iter != m_bldtskTimeOrder.end())
+                for (auto task : m_bldtskTimeOrder)
                 {
-                    targetTask = *iter;
-                    break;
+                    if (!task->decoding)
+                        continue;
+                    if (task->seekPts.first <= pts && task->seekPts.second > pts)
+                        targetTasks.push_back(task);
                 }
-                else if (!wait)
-                    break;
             }
-            this_thread::sleep_for(chrono::milliseconds(5));
-        } while (!m_close);
-        if (!targetTask)
-        {
-            m.time_stamp = ts;
-            return true;
-        }
-        if (targetTask->demuxEof && targetTask->frmPtsAry.empty())
-        {
-            ostringstream oss;
-            oss << "Current task [" << targetTask->seekPts.first << "(" << MillisecToString(CvtPtsToMts(targetTask->seekPts.first)) << "), "
-                << targetTask->seekPts.second << "(" << MillisecToString(CvtPtsToMts(targetTask->seekPts.second)) << ")) has NO FRM PTS!";
-            m_errMsg = oss.str();
-            return false;
-        }
-        if (targetTask->vfAry.empty() && !wait)
-        {
-            m.time_stamp = ts;
-            return true;
-        }
 
-        bool foundBestFrame = false;
-        list<VideoFrame>::iterator bestfrmIter;
-        do
-        {
-            if (!targetTask->vfAry.empty())
+            // search for the best suitable frame
+            for (auto task : targetTasks)
             {
-                bestfrmIter= find_if(targetTask->vfAry.begin(), targetTask->vfAry.end(), [ts](const VideoFrame& frm) {
+                auto& vfAry = task->vfAry;
+                if (vfAry.empty())
+                    continue;
+                auto iter = find_if(vfAry.begin(), vfAry.end(), [ts](auto& frm) {
                     return frm.ts > ts;
                 });
-                bool lastFrmInAry = false;
-                if (bestfrmIter == targetTask->vfAry.end())
-                    lastFrmInAry = true;
-                if (bestfrmIter != targetTask->vfAry.begin())
-                    bestfrmIter--;
-                if (!lastFrmInAry || targetTask->decodeEof)
+                if (iter != vfAry.begin())
+                    iter--;
+                if (ts >= iter->ts && ts-iter->ts < m_vidfrmIntvMts/1000)
                 {
+                    pBestCandidate = &(*iter);
                     foundBestFrame = true;
                     break;
                 }
-                else if (ts-bestfrmIter->ts <= m_vidfrmIntvMts/1000)
-                {
-                    foundBestFrame = true;
-                    break;
-                }
-                else if (!wait)
-                    break;
+                if (!pBestCandidate || fabs(iter->ts-ts) < fabs(pBestCandidate->ts-ts))
+                    pBestCandidate = &(*iter);
             }
-            this_thread::sleep_for(chrono::milliseconds(5));
-        } while (!m_close);
+
+            if (foundBestFrame || !wait)
+                break;
+            this_thread::sleep_for(chrono::milliseconds(2));
+        }
 
         if (foundBestFrame)
         {
             if (wait)
             {
-                // while(!m_close && !bestfrmIter->ownfrm)
-                while(!m_close && bestfrmIter->vmat.empty())
-                    this_thread::sleep_for(chrono::milliseconds(5));
+                while(!m_close && pBestCandidate->vmat.empty())
+                    this_thread::sleep_for(chrono::milliseconds(2));
             }
-            // if (bestfrmIter->ownfrm)
-            if (!bestfrmIter->vmat.empty())
-            {
-                // if (!m_frmCvt.ConvertImage(bestfrmIter->ownfrm.get(), m, bestfrmIter->ts))
-                //     m_logger->Log(Error) << "FAILED to convert AVFrame to ImGui::ImMat for '" << m_hParser->GetUrl() << "' @pos " << ts << "sec! Error is '" << m_frmCvt.GetError() << "'." << endl;
-                m = bestfrmIter->vmat;
-            }
+            if (!pBestCandidate->vmat.empty())
+                m = pBestCandidate->vmat;
             else
-                m.time_stamp = bestfrmIter->ts;
+                m.time_stamp = pBestCandidate->ts;
         }
         else
+        {
             m.time_stamp = ts;
-
+        }
         return true;
     }
 
@@ -1508,7 +1479,6 @@ private:
     struct VideoFrame
     {
         SelfFreeAVFramePtr decfrm;
-        // SelfFreeAVFramePtr ownfrm;
         ImGui::ImMat vmat;
         double ts;
     };
@@ -1905,6 +1875,7 @@ private:
                 }
                 if (oldTask)
                 {
+                    oldTask->decodeEof = true;
                     if (oldTask->cancel && avfrmLoaded)
                     {
                         m_logger->Log(DEBUG) << "~~~~ Old video task canceled, startPts="
@@ -2082,24 +2053,6 @@ private:
                     {
                         if (!m_frmCvt.ConvertImage(vf.decfrm.get(), vf.vmat, vf.ts))
                             m_logger->Log(Error) << "FAILED to convert AVFrame to ImGui::ImMat for '" << m_hParser->GetUrl() << "' @pos " << vf.ts << "sec! Error is '" << m_frmCvt.GetError() << "'." << endl;
-                        // AVFrame* frm = vf.decfrm.get();
-                        // if (IsHwFrame(frm))
-                        // {
-                        //     SelfFreeAVFramePtr swfrm = AllocSelfFreeAVFramePtr();
-                        //     if (swfrm)
-                        //     {
-                        //         if (HwFrameToSwFrame(swfrm.get(), frm))
-                        //             vf.ownfrm = swfrm;
-                        //         else
-                        //             m_logger->Log(Error) << "FAILED to convert HW frame to SW frame!" << endl;
-                        //     }
-                        //     else
-                        //         m_logger->Log(Error) << "FAILED to allocate new SelfFreeAVFramePtr!" << endl;
-                        // }
-                        // else
-                        // {
-                        //     vf.ownfrm = vf.decfrm;
-                        // }
                         vf.decfrm = nullptr;
                         currTask->frmCnt--;
                         if (currTask->frmCnt < 0)
