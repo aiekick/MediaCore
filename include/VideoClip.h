@@ -79,7 +79,7 @@ struct VideoClip
     virtual VideoFilter::Holder GetFilter() const = 0;
     virtual VideoTransformFilterHolder GetTransformFilter() = 0;
 
-    static bool USE_HWACCEL;  // TODO: should find a better place for this global control parameter
+    static MEDIACORE_API bool USE_HWACCEL;  // TODO: should find a better place for this global control parameter
     friend std::ostream& operator<<(std::ostream& os, VideoClip::Holder hClip);
 };
 

@@ -37,7 +37,11 @@ extern "C"
     #include "libavfilter/buffersink.h"
 }
 
+#ifdef _WIN32
+#define YUV_CONVERT_PLANAR  0
+#else
 #define YUV_CONVERT_PLANAR  1
+#endif
 
 #define ISYUV420P(format)   \
 (format == AV_PIX_FMT_YUV420P || \
@@ -401,15 +405,15 @@ bool HwFrameToSwFrame(AVFrame* swfrm, const AVFrame* hwfrm)
     int fferr;
     av_frame_unref(swfrm);
     fferr = av_hwframe_map(swfrm, hwfrm, AV_HWFRAME_MAP_READ);
-    if (fferr < 0)
+    if (fferr < 0 || swfrm->width == 0 || swfrm->height == 0)
     {
-        Log(WARN) << "av_hwframe_map() FAILED! fferr=" << fferr << "." << endl;
+        // Log(WARN) << "av_hwframe_map() FAILED! fferr=" << fferr << "." << endl;
         av_frame_unref(swfrm);
         swfrm->format = (int)AV_PIX_FMT_NONE;
         fferr = av_hwframe_transfer_data(swfrm, hwfrm, 0);
         if (fferr < 0)
         {
-            Log(Error) << "av_hwframe_transfer_data() FAILED! fferr=" << fferr << "." << endl;
+            Log(Error) << "av_hwframe_map and av_hwframe_transfer_data() FAILED! fferr=" << fferr << "." << endl;
             return false;
         }
     }
