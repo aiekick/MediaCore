@@ -30,7 +30,9 @@ extern "C"
     #include "libavutil/avutil.h"
     #include "libavutil/opt.h"
     #include "libavutil/channel_layout.h"
+#if LIBAVCODEC_VERSION_MAJOR > 58 || (LIBAVCODEC_VERSION_MAJOR == 58 && LIBAVCODEC_VERSION_MINOR >= 78)
     #include "libavcodec/codec_desc.h"
+#endif
     #include "libavfilter/buffersrc.h"
     #include "libavfilter/buffersink.h"
 }
@@ -827,7 +829,11 @@ bool AVFrameToImMatConverter::ConvertImage(const AVFrame* avfrm, ImGui::ImMat& o
         rgbMat.color_format = IM_CF_ABGR;
         rgbMat.w = m_outWidth;
         rgbMat.h = m_outHeight;
-        m_imgClrCvt->YUV2RGBA(inMat[0], inMat[1], inMat.size() > 2 ? inMat[2] : ImGui::ImMat(), rgbMat, m_resizeInterp);
+        if (!m_imgClrCvt->YUV2RGBA(inMat[0], inMat[1], inMat.size() > 2 ? inMat[2] : ImGui::ImMat(), rgbMat, m_resizeInterp))
+        {
+            m_errMsg = m_imgClrCvt->GetError();
+            return false;
+        }
         if (m_outputCpuMat && rgbMat.device == IM_DD_VULKAN)
         {
             outMat.type = IM_DT_INT8;
