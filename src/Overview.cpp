@@ -401,9 +401,15 @@ private:
             m_vidStartMts = (int64_t)(vidStream->startTime*1000);
             m_vidDurMts = (int64_t)(vidStream->duration*1000);
             m_vidFrmCnt = vidStream->frameNum;
-            AVRational avgFrmRate = { vidStream->avgFrameRate.num, vidStream->avgFrameRate.den };
-            if (avgFrmRate.den <= 0)
-                m_vidfrmIntvTs = av_q2d(av_inv_q(avgFrmRate));
+            AVRational timebase = { vidStream->timebase.num, vidStream->timebase.den };
+            AVRational frameRate;
+            if (Ratio::IsValid(vidStream->avgFrameRate))
+                frameRate = { vidStream->avgFrameRate.num, vidStream->avgFrameRate.den };
+            else if (Ratio::IsValid(vidStream->realFrameRate))
+                frameRate = { vidStream->realFrameRate.num, vidStream->realFrameRate.den };
+            else
+                frameRate = av_inv_q(timebase);
+            m_vidfrmIntvTs = av_q2d(av_inv_q(frameRate));
 
             if (m_isImage)
                 m_frmCvt.SetUseVulkanConverter(false);

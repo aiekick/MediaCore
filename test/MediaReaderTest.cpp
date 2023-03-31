@@ -319,7 +319,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
         {
             bool eof;
             ImGui::ImMat vmat;
-            if (g_vidrdr->ReadVideoFrame(playPos, vmat, eof, false))
+            if (g_vidrdr->ReadVideoFrame(playPos, vmat, eof))
             {
                 imgTag = TimestampToString(vmat.time_stamp);
                 bool imgValid = true;

@@ -19,18 +19,10 @@
 #include <functional>
 #include "AudioClip.h"
 #include "Logger.h"
+#include "SysUtils.h"
 
 using namespace std;
 using namespace Logger;
-
-static string GetFileNameFromPath(const string& path)
-{
-    auto pos = path.rfind("/");
-    if (pos == string::npos)
-        pos = path.rfind("\\");
-    auto fileName = pos==string::npos ? path : path.substr(pos+1);
-    return std::move(fileName);
-}
 
 namespace MediaCore
 {
@@ -52,7 +44,7 @@ public:
         string loggerName = "";
         if (exclusiveLogger)
         {
-            auto fileName = GetFileNameFromPath(hParser->GetUrl());
+            auto fileName = SysUtils::ExtractFileName(hParser->GetUrl());
             ostringstream oss;
             oss << "AUD@" << fileName << "";
             loggerName = oss.str();
@@ -218,8 +210,8 @@ public:
             readSamples = leftSamples;
         int channels = m_srcReader->GetAudioOutChannels();
         ImGui::ImMat amat;
-        bool srceof{false};
-        if (!m_srcReader->ReadAudioSamples(amat, readSamples, srceof))
+        bool srcEof{false};
+        if (!m_srcReader->ReadAudioSamples(amat, readSamples, srcEof))
             throw runtime_error(m_srcReader->GetError());
         double srcpos = amat.time_stamp;
         amat.time_stamp = (double)m_readSamples/sampleRate+(double)m_start/1000.;
@@ -231,10 +223,10 @@ public:
         else
             m_readSamples -= readSamples;
         const uint32_t leftSamples2 = LeftSamples();
-        if (leftSamples2 == 0)
+        if (leftSamples2 == 0 || srcEof)
             m_eof = eof = true;
 
-        if (m_filter)
+        if (m_filter && readSamples > 0)
             amat = m_filter->FilterPcm(amat, (int64_t)(amat.time_stamp*1000) - m_start);
         return amat;
     }

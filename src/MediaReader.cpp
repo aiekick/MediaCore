@@ -167,9 +167,15 @@ public:
         }
 
         m_vidDurTs = vidStream->duration;
-        AVRational avgFrmRate = { vidStream->avgFrameRate.num, vidStream->avgFrameRate.den };
         AVRational timebase = { vidStream->timebase.num, vidStream->timebase.den };
-        m_vidfrmIntvMts = av_q2d(av_inv_q(avgFrmRate))*1000.;
+        AVRational frameRate;
+        if (Ratio::IsValid(vidStream->avgFrameRate))
+            frameRate = { vidStream->avgFrameRate.num, vidStream->avgFrameRate.den };
+        else if (Ratio::IsValid(vidStream->realFrameRate))
+            frameRate = { vidStream->realFrameRate.num, vidStream->realFrameRate.den };
+        else
+            frameRate = av_inv_q(timebase);
+        m_vidfrmIntvMts = av_q2d(av_inv_q(frameRate))*1000.;
 
         m_isVideoReader = true;
         m_configured = true;
@@ -225,9 +231,15 @@ public:
         }
 
         m_vidDurTs = vidStream->duration;
-        AVRational avgFrmRate = { vidStream->avgFrameRate.num, vidStream->avgFrameRate.den };
         AVRational timebase = { vidStream->timebase.num, vidStream->timebase.den };
-        m_vidfrmIntvMts = av_q2d(av_inv_q(avgFrmRate))*1000.;
+        AVRational frameRate;
+        if (Ratio::IsValid(vidStream->avgFrameRate))
+            frameRate = { vidStream->avgFrameRate.num, vidStream->avgFrameRate.den };
+        else if (Ratio::IsValid(vidStream->realFrameRate))
+            frameRate = { vidStream->realFrameRate.num, vidStream->realFrameRate.den };
+        else
+            frameRate = av_inv_q(timebase);
+        m_vidfrmIntvMts = av_q2d(av_inv_q(frameRate))*1000.;
 
         m_isVideoReader = true;
         m_configured = true;
@@ -497,6 +509,7 @@ public:
             return false;
         }
 
+        m_logger->Log(DEBUG) << "--> seek pos: " << ts << endl;
         if (m_isVideoReader)
         {
             bool deferred = true;
@@ -519,7 +532,6 @@ public:
         else
         {
             lock_guard<recursive_mutex> lk(m_apiLock);
-            // m_logger->Log(WARN) << "--> seek pos: " << ts << endl;
             if (m_prepared)
             {
                 UpdateCacheWindow(ts);
@@ -619,7 +631,7 @@ public:
             m_errMsg = "This 'MediaReader' instance is NOT STARTED yet!";
             return false;
         }
-        if (pos < 0 || pos > m_vidDurTs)
+        if (pos < 0 || pos >= m_vidDurTs)
         {
             m_errMsg = "Invalid argument! 'pos' can NOT be negative or larger than video's duration.";
             eof = true;
@@ -903,22 +915,22 @@ private:
 
     int64_t CvtVidPtsToMts(int64_t pts)
     {
-        return av_rescale_q(pts-m_vidStartTime, m_vidTimeBase, MILLISEC_TIMEBASE);
+        return av_rescale_q_rnd(pts-m_vidStartTime, m_vidTimeBase, MILLISEC_TIMEBASE, AV_ROUND_DOWN);
     }
 
     int64_t CvtVidMtsToPts(int64_t mts)
     {
-        return av_rescale_q(mts, MILLISEC_TIMEBASE, m_vidTimeBase)+m_vidStartTime;
+        return av_rescale_q_rnd(mts, MILLISEC_TIMEBASE, m_vidTimeBase, AV_ROUND_DOWN)+m_vidStartTime;
     }
 
     int64_t CvtAudPtsToMts(int64_t pts)
     {
-        return av_rescale_q(pts-m_audAvStm->start_time, m_audAvStm->time_base, MILLISEC_TIMEBASE);
+        return av_rescale_q_rnd(pts-m_audAvStm->start_time, m_audAvStm->time_base, MILLISEC_TIMEBASE, AV_ROUND_DOWN);
     }
 
     int64_t CvtAudMtsToPts(int64_t mts)
     {
-        return av_rescale_q(mts, MILLISEC_TIMEBASE, m_audAvStm->time_base)+m_audAvStm->start_time;
+        return av_rescale_q_rnd(mts, MILLISEC_TIMEBASE, m_audAvStm->time_base, AV_ROUND_DOWN)+m_audAvStm->start_time;
     }
 
     int64_t CvtPtsToMts(int64_t pts)
@@ -933,7 +945,7 @@ private:
 
     int64_t CvtSwrPtsToMts(int64_t pts)
     {
-        return av_rescale_q(pts-m_swrOutStartTime, m_swrOutTimebase, MILLISEC_TIMEBASE);
+        return av_rescale_q_rnd(pts-m_swrOutStartTime, m_swrOutTimebase, MILLISEC_TIMEBASE, AV_ROUND_DOWN);
     }
 
     bool OpenMedia(MediaParser::Holder hParser)
@@ -1033,6 +1045,7 @@ private:
             m_vidAvStm = m_avfmtCtx->streams[m_vidStmIdx];
             m_vidStartTime = m_vidAvStm->start_time != AV_NOPTS_VALUE ? m_vidAvStm->start_time : 0;
             m_vidTimeBase = m_vidAvStm->time_base;
+            m_vidfrmIntvPts = av_rescale_q(1, av_inv_q(m_vidAvStm->r_frame_rate), m_vidAvStm->time_base);
 
             m_viddecOpenOpts.onlyUseSoftwareDecoder = !m_vidPreferUseHw;
             m_viddecOpenOpts.useHardwareType = m_vidUseHwType;
@@ -1249,22 +1262,32 @@ private:
         int64_t pts = CvtMtsToPts(ts*1000);
         while (!m_close)
         {
+            bool isBadTs = false;
             // find the tasks the required frame may possibly reside in
             list<GopDecodeTaskHolder> targetTasks;
             {
                 lock_guard<mutex> lk(m_bldtskByTimeLock);
                 for (auto task : m_bldtskTimeOrder)
                 {
-                    if (!task->decoding)
+                    if (!task->decodeStarted)
                         continue;
-                    if (task->seekPts.first <= pts && task->seekPts.second > pts)
+                    if (task->frmPtsRange.first <= pts && pts <= task->frmPtsRange.second )
                         targetTasks.push_back(task);
+                    else if ((task->isFileBegin && task->demuxStopped && pts < task->frmPtsRange.first) ||
+                            (task->isFileEnd && task->demuxStopped && (int64_t)(ts*1000) >= CvtPtsToMts(task->frmPtsRange.second)+m_vidfrmIntvMts))
+                        isBadTs = true;
                 }
             }
+            if (isBadTs)
+                break;
 
+            bool tasksDecodeDone = true;
             // search for the best suitable frame
             for (auto task : targetTasks)
             {
+                if (!task->decodeStopped)
+                    tasksDecodeDone = false;
+
                 auto& vfAry = task->vfAry;
                 if (vfAry.empty())
                     continue;
@@ -1279,11 +1302,13 @@ private:
                     foundBestFrame = true;
                     break;
                 }
-                if (!pBestCandidate || fabs(iter->ts-ts) < fabs(pBestCandidate->ts-ts))
+                if (!pBestCandidate || iter->ts >= ts && pBestCandidate->ts < ts || fabs(iter->ts-ts) < fabs(pBestCandidate->ts-ts))
                     pBestCandidate = &(*iter);
             }
 
             if (foundBestFrame || !wait)
+                break;
+            if (!targetTasks.empty() && tasksDecodeDone)
                 break;
             this_thread::sleep_for(chrono::milliseconds(2));
         }
@@ -1525,14 +1550,16 @@ private:
         atomic_int32_t frmCnt{0};
         list<AVPacket*> avpktQ;
         list<int64_t> frmPtsAry;
+        pair<int64_t, int64_t> frmPtsRange{INT64_MAX, INT64_MIN};
         mutex avpktQLock;
-        bool demuxing{false};
-        bool demuxEof{false};
-        bool mediaBegin{false};
-        bool mediaEnd{false};
-        bool decoding{false};
+        bool demuxStarted{false};
+        bool demuxStopped{false};
+        bool demuxSeeked{false};
+        bool isFileBegin{false};
+        bool isFileEnd{false};
+        bool decodeStarted{false};
         bool decInputEof{false};
-        bool decodeEof{false};
+        bool decodeStopped{false};
         bool cancel{false};
     };
     using GopDecodeTaskHolder = shared_ptr<GopDecodeTask>;
@@ -1542,7 +1569,7 @@ private:
         GopDecodeTaskHolder nxttsk = nullptr;
         uint32_t pendingTaskCnt = 0;
         for (auto& tsk : m_bldtskPriOrder)
-            if (!tsk->cancel && !tsk->demuxing)
+            if (!tsk->cancel && !tsk->demuxStarted)
             {
                 nxttsk = tsk;
                 break;
@@ -1563,9 +1590,9 @@ private:
         AVPacket avpkt = {0};
         bool avpktLoaded = false;
         GopDecodeTaskHolder currTask = nullptr;
-        int64_t lastPktPts, lastTaskSeekPts1;
-        lastTaskSeekPts1 = INT64_MIN;
-        bool demuxEof = false;
+        int64_t lastPktPts, prevTaskSeekPtsSecond;
+        prevTaskSeekPtsSecond = INT64_MIN;
+        bool fileDemuxEof = false;
         int stmidx = m_isVideoReader ? m_vidStmIdx : m_audStmIdx;
         while (!m_quitThread)
         {
@@ -1574,11 +1601,11 @@ private:
             UpdateBuildTask();
 
             bool taskChanged = false;
-            if (!currTask || currTask->cancel || currTask->demuxEof)
+            if (!currTask || currTask->cancel || currTask->demuxStopped)
             {
                 if (currTask)
                 {
-                    lastTaskSeekPts1 = currTask->seekPts.second;
+                    prevTaskSeekPtsSecond = currTask->seekPts.second;
                     if (currTask->cancel)
                     {
                         m_logger->Log(DEBUG) << "~~~~ Old demux task canceled, startPts=" 
@@ -1589,7 +1616,7 @@ private:
                 currTask = FindNextDemuxTask();
                 if (currTask)
                 {
-                    currTask->demuxing = true;
+                    currTask->demuxStarted = true;
                     taskChanged = true;
                     m_logger->Log(DEBUG) << "--> Change demux task, startPts=" 
                         << currTask->seekPts.first << "(" << MillisecToString(CvtPtsToMts(currTask->seekPts.first)) << ")"
@@ -1601,7 +1628,7 @@ private:
             {
                 if (taskChanged)
                 {
-                    if (!avpktLoaded || lastTaskSeekPts1 != currTask->seekPts.first || avpkt.pts < currTask->seekPts.first)
+                    if (!avpktLoaded || prevTaskSeekPtsSecond != currTask->seekPts.first || avpkt.pts < currTask->seekPts.first)
                     {
                         if (avpktLoaded)
                         {
@@ -1618,25 +1645,21 @@ private:
                                 m_logger->Log(Error) << "avformat_seek_file() FAILED for seeking to 'currTask->startPts'(" << currTask->seekPts.first << ")! fferr = " << fferr << "!" << endl;
                                 break;
                             }
+                            currTask->demuxSeeked = true;
                         }
-                        demuxEof = false;
+                        fileDemuxEof = false;
                         int64_t ptsAfterSeek = INT64_MIN;
                         if (!ReadNextStreamPacket(stmidx, &avpkt, &avpktLoaded, &ptsAfterSeek))
                             break;
                         if (ptsAfterSeek == INT64_MAX)
-                            demuxEof = true;
-                        else if ((m_isVideoReader && ptsAfterSeek == m_vidAvStm->start_time) ||
-                                 (!m_isVideoReader && ptsAfterSeek == m_audAvStm->start_time))
-                            currTask->mediaBegin = true;
-                        else if (ptsAfterSeek != currTask->seekPts.first)
-                        {
-                            // m_logger->Log(WARN) << "WARNING! 'ptsAfterSeek'(" << ptsAfterSeek << ") != 'ssTask->startPts'(" << currTask->seekPts.first << ")!" << endl;
-                            // currTask->seekPts.first = ptsAfterSeek;
-                        }
+                            fileDemuxEof = true;
+                        else if ((m_isVideoReader && ptsAfterSeek <= m_vidAvStm->start_time) ||
+                                 (!m_isVideoReader && ptsAfterSeek <= m_audAvStm->start_time))
+                            currTask->isFileBegin = true;
                     }
                 }
 
-                if (!demuxEof && !avpktLoaded)
+                if (!fileDemuxEof && !avpktLoaded)
                 {
                     int fferr = av_read_frame(m_avfmtCtx, &avpkt);
                     if (fferr == 0)
@@ -1648,14 +1671,14 @@ private:
                     {
                         if (fferr == AVERROR_EOF)
                         {
-                            currTask->mediaEnd = true;
-                            currTask->demuxEof = true;
+                            currTask->isFileEnd = true;
+                            currTask->demuxStopped = true;
                             if (taskChanged)
                             {
                                 m_logger->Log(WARN) << "First AVPacket is EOF for this task! This task is INVALID." << endl;
                                 currTask->cancel = true;
                             }
-                            demuxEof = true;
+                            fileDemuxEof = true;
                             // cancel all the following tasks if there is any
                             {
                                 lock_guard<mutex> lk(m_bldtskByPriLock);
@@ -1663,7 +1686,7 @@ private:
                                 {
                                     if (task->seekPts.first > currTask->seekPts.first)
                                     {
-                                        m_logger->Log(DEBUG) << "CANCEL invalid task after demux EOF, seekPts.first=" << task->seekPts.first << "." << endl;
+                                        m_logger->Log(DEBUG) << "CANCEL invalid task after WHOLE FILE demux EOF, seekPts.first=" << task->seekPts.first << "." << endl;
                                         task->cancel = true;
                                     }
                                 }
@@ -1682,9 +1705,9 @@ private:
                     if (avpkt.stream_index == stmidx)
                     {
                         if (avpkt.pts >= currTask->seekPts.second)
-                            currTask->demuxEof = true;
+                            currTask->demuxStopped = true;
 
-                        if (!currTask->demuxEof)
+                        if (!currTask->demuxStopped)
                         {
                             AVPacket* enqpkt = av_packet_clone(&avpkt);
                             if (!enqpkt)
@@ -1696,24 +1719,12 @@ private:
                                 lock_guard<mutex> lk(currTask->avpktQLock);
                                 // m_logger->Log(DEBUG) << "-> Queuing AVPacket of stream#" << stmidx << ", pts=" << enqpkt->pts << "." << endl;
                                 currTask->avpktQ.push_back(enqpkt);
-                                if (lastPktPts != enqpkt->pts)
-                                {
-                                    currTask->frmPtsAry.push_back(enqpkt->pts);
-                                    lastPktPts = enqpkt->pts;
-                                }
-                                if (m_isVideoReader)
-                                {
-                                    if (enqpkt->pts < currTask->seekPts.first)
-                                    {
-                                        m_logger->Log(DEBUG) << "-=-> Change current task 'seekPts.first' from " << currTask->seekPts.first << " to " << enqpkt->pts << endl;
-                                        currTask->seekPts.first = enqpkt->pts;
-                                    }
-                                    else if (enqpkt->pts > currTask->seekPts.second)
-                                    {
-                                        m_logger->Log(DEBUG) << "-=-> Change current task 'seekPts.second' from " << currTask->seekPts.second << " to " << enqpkt->pts << endl;
-                                        currTask->seekPts.second = enqpkt->pts;
-                                    }
-                                }
+                                currTask->frmPtsAry.push_back(enqpkt->pts);
+                                if (currTask->frmPtsRange.first > enqpkt->pts)
+                                    currTask->frmPtsRange.first = enqpkt->pts;
+                                auto pktDur = enqpkt->duration > 0 ? enqpkt->duration : m_vidfrmIntvPts;
+                                if (currTask->frmPtsRange.second < enqpkt->pts+pktDur)
+                                    currTask->frmPtsRange.second = enqpkt->pts+pktDur;
                             }
                             av_packet_unref(&avpkt);
                             avpktLoaded = false;
@@ -1732,8 +1743,8 @@ private:
                 this_thread::sleep_for(chrono::milliseconds(5));
         }
 
-        if (currTask && !currTask->demuxEof)
-            currTask->demuxEof = true;
+        if (currTask && !currTask->demuxStopped)
+            currTask->demuxStopped = true;
         if (avpktLoaded)
             av_packet_unref(&avpkt);
         m_logger->Log(DEBUG) << "Leave DemuxThreadProc()." << endl;
@@ -1779,7 +1790,7 @@ private:
         lock_guard<mutex> lk(m_bldtskByPriLock);
         GopDecodeTaskHolder nxttsk = nullptr;
         for (auto& tsk : m_bldtskPriOrder)
-            if (!tsk->cancel && tsk->demuxing && !tsk->decoding)
+            if (!tsk->cancel && tsk->demuxStarted && !tsk->decodeStarted)
             {
                 nxttsk = tsk;
                 break;
@@ -1791,58 +1802,68 @@ private:
     {
         double ts = (double)CvtPtsToMts(frm->pts)/1000;
         lock_guard<mutex> lk(m_bldtskByPriLock);
-        auto iter = find_if(m_bldtskPriOrder.begin(), m_bldtskPriOrder.end(), [frm](const GopDecodeTaskHolder& task) {
-            return frm->pts >= task->seekPts.first && frm->pts < task->seekPts.second;
-        });
-        if (iter != m_bldtskPriOrder.end())
+        GopDecodeTaskHolder enqTask;
+        bool foundMatchPacket = false;
+        for (auto task : m_bldtskPriOrder)
         {
-            VideoFrame vf;
-            vf.ts = ts;
-            vf.decfrm = CloneSelfFreeAVFramePtr(frm);
-            if (!vf.decfrm)
+            if (task->frmPtsRange.first > frm->pts || task->frmPtsRange.second < frm->pts)
+                continue;
+            enqTask = task;
+            auto ptsIter = find(task->frmPtsAry.begin(), task->frmPtsAry.end(), frm->pts);
+            if (ptsIter != task->frmPtsAry.end())
             {
-                m_logger->Log(Error) << "FAILED to invoke 'CloneSelfFreeAVFramePtr()' to allocate new AVFrame for VF!" << endl;
-                return false;
+                foundMatchPacket = true;
+                break;
             }
-            // m_logger->Log(DEBUG) << "Adding VF#" << ts << "." << endl;
-            auto& task = *iter;
-            if (task->vfAry.empty())
-            {
-                task->vfAry.push_back(vf);
-                task->frmCnt++;
-                m_pendingVidfrmCnt++;
-            }
-            else
-            {
-                auto vfRvsIter = find_if(task->vfAry.rbegin(), task->vfAry.rend(), [ts](const VideoFrame& vf) {
-                    return vf.ts <= ts;
-                });
-                if (vfRvsIter != task->vfAry.rend() && vfRvsIter->ts == ts)
-                {
-                    m_logger->Log(DEBUG) << "Found duplicated VF#" << ts << ", dropping this VF. pts=" << frm->pts
-                        << ", t=" << MillisecToString(CvtPtsToMts(frm->pts)) << "." << endl;
-                }
-                else
-                {
-                    auto vfFwdIter = vfRvsIter.base();
-                    task->vfAry.insert(vfFwdIter, vf);
-                    task->frmCnt++;
-                    m_pendingVidfrmCnt++;
-                }
-            }
-            if (task->vfAry.size() >= task->frmPtsAry.size() || frm->pts >= task->frmPtsAry.back())
-            {
-                // m_logger->Log(DEBUG) << "Task [" << task->seekPts.first << "(" << MillisecToString(CvtPtsToMts(task->seekPts.first)) << "), "
-                // << task->seekPts.second << "(" << MillisecToString(CvtPtsToMts(task->seekPts.second)) << ")) finishes ALL FRAME decoding." << endl;
-                task->decodeEof = true;
-            }
-            return true;
+        }
+        if (!enqTask)
+        {
+            m_logger->Log(WARN) << "Dropping VF ts=" << ts << ", pts=" << frm->pts << " due to no matching task is found." << endl;
+            return false;
+        }
+        if (!foundMatchPacket)
+        {
+            m_logger->Log(WARN) << "VF ts=" << ts << ", pts=" << frm->pts << " can fit into task startPts=[" 
+                    << enqTask->seekPts.first << "(" << MillisecToString(CvtPtsToMts(enqTask->seekPts.first)) << ")"
+                    << ", endPts=" << enqTask->seekPts.second << "(" << MillisecToString(CvtPtsToMts(enqTask->seekPts.second)) << ")]"
+                    << ", frmPtsRnage=[" << enqTask->frmPtsRange.first << ", " << enqTask->frmPtsRange.second << "]"
+                    << ", BUT CANNOT find the matching packet with the same pts!" << endl;
+        }
+
+        VideoFrame vf;
+        vf.ts = ts;
+        vf.decfrm = CloneSelfFreeAVFramePtr(frm);
+        if (!vf.decfrm)
+        {
+            m_logger->Log(Error) << "FAILED to invoke 'CloneSelfFreeAVFramePtr()' to allocate new AVFrame for VF!" << endl;
+            return false;
+        }
+        // m_logger->Log(DEBUG) << "Adding VF#" << ts << "." << endl;
+        if (enqTask->vfAry.empty())
+        {
+            enqTask->vfAry.push_back(vf);
+            enqTask->frmCnt++;
+            m_pendingVidfrmCnt++;
         }
         else
         {
-            m_logger->Log(DEBUG) << "Dropping VF#" << ts << " due to no matching task is found." << endl;
+            auto vfRvsIter = find_if(enqTask->vfAry.rbegin(), enqTask->vfAry.rend(), [ts] (auto& vf) {
+                return vf.ts <= ts;
+            });
+            if (vfRvsIter != enqTask->vfAry.rend() && vfRvsIter->ts == ts)
+            {
+                m_logger->Log(DEBUG) << "Found duplicated VF#" << ts << ", dropping this VF. pts=" << frm->pts
+                    << ", t=" << MillisecToString(CvtPtsToMts(frm->pts)) << "." << endl;
+            }
+            else
+            {
+                auto vfFwdIter = vfRvsIter.base();
+                enqTask->vfAry.insert(vfFwdIter, vf);
+                enqTask->frmCnt++;
+                m_pendingVidfrmCnt++;
+            }
         }
-        return false;
+        return true;
     }
 
     void VideoDecodeThreadProc()
@@ -1865,17 +1886,9 @@ private:
             if (!currTask || currTask->cancel || currTask->decInputEof)
             {
                 GopDecodeTaskHolder oldTask = currTask;
-                currTask = FindNextDecoderTask();
-                if (currTask)
-                {
-                    currTask->decoding = true;
-                    m_logger->Log(DEBUG) << "==> Change decoding task, startPts="
-                        << currTask->seekPts.first << "(" << MillisecToString(CvtPtsToMts(currTask->seekPts.first)) << ")"
-                        << ", endPts=" << currTask->seekPts.second << "(" << MillisecToString(CvtPtsToMts(currTask->seekPts.second)) << ")" << endl;
-                }
                 if (oldTask)
                 {
-                    oldTask->decodeEof = true;
+                    oldTask->decodeStopped = true;
                     if (oldTask->cancel && avfrmLoaded)
                     {
                         m_logger->Log(DEBUG) << "~~~~ Old video task canceled, startPts="
@@ -1884,12 +1897,20 @@ private:
                         av_frame_unref(&avfrm);
                         avfrmLoaded = false;
                     }
-                    if (oldTask->cancel || !currTask || oldTask->seekPts.second != currTask->seekPts.first)
-                    {
-                        // m_logger->Log(DEBUG) << ">>>--->>> Sending NULL ptr to video decoder <<<---<<<" << endl;
-                        avcodec_send_packet(m_viddecCtx, nullptr);
-                        sentNullPacket = true;
-                    }
+                }
+                currTask = FindNextDecoderTask();
+                if (currTask)
+                {
+                    currTask->decodeStarted = true;
+                    m_logger->Log(DEBUG) << "==> Change decoding task, startPts="
+                        << currTask->seekPts.first << "(" << MillisecToString(CvtPtsToMts(currTask->seekPts.first)) << ")"
+                        << ", endPts=" << currTask->seekPts.second << "(" << MillisecToString(CvtPtsToMts(currTask->seekPts.second)) << ")" << endl;
+                }
+                if ((oldTask && (oldTask->cancel || oldTask->isFileEnd)) || (currTask && currTask->demuxSeeked))
+                {
+                    m_logger->Log(DEBUG) << ">>>--->>> Sending NULL ptr to video decoder <<<---<<<" << endl;
+                    avcodec_send_packet(m_viddecCtx, nullptr);
+                    sentNullPacket = true;
                 }
             }
 
@@ -1929,10 +1950,6 @@ private:
                             m_logger->Log(VERBOSE) << "Video decoder current task reaches EOF!" << endl;
                         }
                     }
-                    // else
-                    // {
-                    //     m_logger->Log(DEBUG) << "<<<<<<--- avcodec_receive_frame() returns EAGAIN." << endl;
-                    // }
                 }
 
                 hasOutput = avfrmLoaded;
@@ -1991,12 +2008,8 @@ private:
                             << fferr << "." << endl;
                         break;
                     }
-                    // else
-                    // {
-                    //     m_logger->Log(DEBUG) << "--->>>>>> avcodec_send_packet() returns EAGAIN." << endl;
-                    // }
                 }
-                else if (currTask->demuxEof)
+                else if (currTask->demuxStopped)
                 {
                     currTask->decInputEof = true;
                     idleLoop = false;
@@ -2129,12 +2142,6 @@ private:
                     task->frmCnt++;
                 }
             }
-            if (task->afAry.size() >= task->frmPtsAry.size())
-            {
-                // m_logger->Log(DEBUG) << "Task [" << task->seekPts.first << "(" << MillisecToString(CvtPtsToMts(task->seekPts.first)) << "), "
-                // << task->seekPts.second << "(" << MillisecToString(CvtPtsToMts(task->seekPts.second)) << ")) finishes ALL FRAME decoding." << endl;
-                task->decodeEof = true;
-            }
             return true;
         }
         else
@@ -2174,18 +2181,16 @@ private:
 
             if (!currTask || currTask->decInputEof)
             {
-                // GopDecodeTaskHolder oldTask = currTask;
+                if (currTask)
+                {
+                    currTask->decodeStopped = true;
+                }
                 currTask = FindNextDecoderTask();
                 if (currTask)
                 {
-                    currTask->decoding = true;
+                    currTask->decodeStarted = true;
                     // m_logger->Log(DEBUG) << "==> Change decoding task to build index (" << currTask->ssIdxPair.first << " ~ " << currTask->ssIdxPair.second << ")." << endl;
                 }
-                // else if (oldTask)
-                // {
-                //     avcodec_send_packet(m_viddecCtx, nullptr);
-                //     sentNullPacket = true;
-                // }
             }
 
             if (currTask)
@@ -2256,7 +2261,7 @@ private:
                         break;
                     }
                 }
-                else if (currTask->demuxEof)
+                else if (currTask->demuxStopped)
                 {
                     currTask->decInputEof = true;
                     idleLoop = false;
@@ -2629,6 +2634,7 @@ private:
     void UpdateSnapshotBuildTask()
     {
         CacheWindow currwnd = m_cacheWnd;
+        bool taskListChanged = false;
         if (currwnd.cacheBeginTs != m_bldtskSnapWnd.cacheBeginTs || currwnd.cacheEndTs != m_bldtskSnapWnd.cacheEndTs)
         {
             m_logger->Log(DEBUG) << "^^^ Updating build task, index changed from ("
@@ -2652,6 +2658,7 @@ private:
                             m_logger->Log(DEBUG) << "^^> Remove task 'seekPts.first'=" << (*iter)->seekPts.first << "(" << MillisecToString(CvtPtsToMts((*iter)->seekPts.first)) << ")"
                                 << ", 'seekPts.second'=" << (*iter)->seekPts.second << "(" << MillisecToString(CvtPtsToMts((*iter)->seekPts.second)) << ")" << endl;
                             iter = m_bldtskTimeOrder.erase(iter);
+                            taskListChanged = true;
                         }
                         else
                             break;
@@ -2664,6 +2671,7 @@ private:
                     for (auto& tsk : m_bldtskTimeOrder)
                         tsk->cancel = true;
                     m_bldtskTimeOrder.clear();
+                    taskListChanged = true;
                 }
 
                 if (beginPts < endPts)
@@ -2681,6 +2689,7 @@ private:
                             GopDecodeTaskHolder task = make_shared<GopDecodeTask>(*this);
                             task->seekPts = { first, second };
                             m_bldtskTimeOrder.push_back(task);
+                            taskListChanged = true;
                             beginPts = second;
                         } while (beginPts < endPts);
                     }
@@ -2705,6 +2714,7 @@ private:
                                 << ", 'seekPts.second'=" << (*iter)->seekPts.second << "(" << MillisecToString(CvtPtsToMts((*iter)->seekPts.second)) << ")" << endl;
                             iter = m_bldtskTimeOrder.erase(iter);
                             iter--;
+                            taskListChanged = true;
                         }
                         else
                             break;
@@ -2717,6 +2727,7 @@ private:
                     for (auto& tsk : m_bldtskTimeOrder)
                         tsk->cancel = true;
                     m_bldtskTimeOrder.clear();
+                    taskListChanged = true;
                 }
 
                 if (beginPts < endPts)
@@ -2734,6 +2745,7 @@ private:
                             GopDecodeTaskHolder task = make_shared<GopDecodeTask>(*this);
                             task->seekPts = { first, second };
                             m_bldtskTimeOrder.push_front(task);
+                            taskListChanged = true;
                             if (iter != m_hSeekPoints->begin())
                                 iter--;
                             else
@@ -2744,10 +2756,9 @@ private:
                 }
             }
         }
-        bool windowPosChanged = currwnd.seekPosShow != m_bldtskSnapWnd.seekPosShow;
         m_bldtskSnapWnd = currwnd;
 
-        if (windowPosChanged)
+        if (taskListChanged)
             UpdateBuildTaskByPriority();
     }
 
@@ -2756,33 +2767,7 @@ private:
         lock_guard<mutex> lk(m_bldtskByPriLock);
         if (m_isVideoReader)
         {
-            CacheWindow cwnd = m_bldtskSnapWnd;
             m_bldtskPriOrder = m_bldtskTimeOrder;
-            m_bldtskPriOrder.sort([this, cwnd](const GopDecodeTaskHolder& a, const GopDecodeTaskHolder& b) {
-                bool aIsShowGop = a->seekPts.first == cwnd.seekPosShow;
-                if (aIsShowGop)
-                    return true;
-                bool bIsShowGop = b->seekPts.first == cwnd.seekPosShow;
-                if (bIsShowGop)
-                    return false;
-                bool aIsForwardGop = a->seekPts.first > cwnd.seekPosShow;
-                if (!m_readForward)
-                    aIsForwardGop = !aIsForwardGop;
-                bool bIsForwardGop = b->seekPts.first > cwnd.seekPosShow;
-                if (!m_readForward)
-                    bIsForwardGop = !bIsForwardGop;
-                if (aIsForwardGop)
-                {
-                    if (!bIsForwardGop)
-                        return true;
-                    else
-                        return (m_readForward^(a->seekPts.first < b->seekPts.first)) == 0;
-                }
-                else if (bIsForwardGop)
-                    return false;
-                else
-                    return (m_readForward^(a->seekPts.first > b->seekPts.first)) == 0;
-            });
         }
         else
         {
@@ -2824,7 +2809,7 @@ private:
             pts1 = pts0+m_audioTaskPtsGap;
             GopDecodeTaskHolder task = make_shared<GopDecodeTask>(*this);
             task->seekPts = { pts0, pts1 };
-            if (pts0 <= 0) task->mediaBegin = true;
+            if (pts0 <= 0) task->isFileBegin = true;
             m_bldtskTimeOrder.push_back(task);
             pts0 = pts1;
         }
@@ -2888,7 +2873,7 @@ private:
                     pts1 = pts0+m_audioTaskPtsGap;
                     GopDecodeTaskHolder task = make_shared<GopDecodeTask>(*this);
                     task->seekPts = { pts0, pts1 };
-                    if (pts0 <= 0) task->mediaBegin = true;
+                    if (pts0 <= 0) task->isFileBegin = true;
                     m_bldtskTimeOrder.push_back(task);
                     pts0 = pts1;
                 }
@@ -2934,7 +2919,7 @@ private:
                     pts0 = pts1-m_audioTaskPtsGap;
                     GopDecodeTaskHolder task = make_shared<GopDecodeTask>(*this);
                     task->seekPts = { pts0, pts1 };
-                    if (pts0 <= 0) task->mediaBegin = true;
+                    if (pts0 <= 0) task->isFileBegin = true;
                     m_bldtskTimeOrder.push_front(task);
                     pts1 = pts0;
                 }
@@ -3026,8 +3011,8 @@ private:
             {
                 m_audReadTask = nullptr;
                 m_audReadOffset = -1;
-                if ((m_readForward && m_bldtskPriOrder.back()->mediaEnd) ||
-                    (!m_readForward && m_bldtskPriOrder.front()->mediaBegin))
+                if ((m_readForward && m_bldtskPriOrder.back()->isFileEnd) ||
+                    (!m_readForward && m_bldtskPriOrder.front()->isFileBegin))
                 {
                     m_audReadEof = true;
                     m_audReadNextTaskSeekPts0 = INT64_MIN;
@@ -3092,7 +3077,7 @@ private:
                 GopDecodeTaskHolder nxttsk = nullptr;
                 for (auto& tsk : m_bldtskPriOrder)
                 {
-                    if (!tsk->decodeEof)
+                    if (!tsk->decodeStopped)
                     {
                         imgEof = false;
                         break;
@@ -3241,14 +3226,15 @@ private:
     double m_seekPosTs{0};
     mutex m_seekPosLock;
     double m_vidfrmIntvMts{0};
+    int64_t m_vidfrmIntvPts{0};
     list<GopDecodeTaskHolder> m_bldtskTimeOrder;
     mutex m_bldtskByTimeLock;
     list<GopDecodeTaskHolder> m_bldtskPriOrder;
     mutex m_bldtskByPriLock;
     atomic_int32_t m_pendingVidfrmCnt{0};
-    int32_t m_maxPendingVidfrmCnt{4};
+    int32_t m_maxPendingVidfrmCnt{2};
     double m_forwardCacheDur{1.5};
-    double m_backwardCacheDur{1};
+    double m_backwardCacheDur{0.5};
     CacheWindow m_cacheWnd;
     CacheWindow m_bldtskSnapWnd;
     bool m_needUpdateBldtsk{false};
