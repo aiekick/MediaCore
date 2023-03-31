@@ -31,7 +31,7 @@ struct MediaReader
 {
     using Holder = std::shared_ptr<MediaReader>;
     static MEDIACORE_API Holder CreateInstance(const std::string& loggerName = "");
-    static Logger::ALogger* GetLogger();
+    static MEDIACORE_API Logger::ALogger* GetLogger();
 
     virtual bool Open(const std::string& url) = 0;
     virtual bool Open(MediaParser::Holder hParser) = 0;

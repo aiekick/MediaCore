@@ -31,12 +31,12 @@ namespace MediaCore
         static MEDIACORE_API Holder CreateInstance(const std::string& loggerName = "");
         static MEDIACORE_API Logger::ALogger* GetLogger();
 
-        static const uint32_t VOLUME;
-        static const uint32_t PAN;
-        static const uint32_t GATE;
-        static const uint32_t LIMITER;
-        static const uint32_t EQUALIZER;
-        static const uint32_t COMPRESSOR;
+        static MEDIACORE_API const uint32_t VOLUME;
+        static MEDIACORE_API const uint32_t PAN;
+        static MEDIACORE_API const uint32_t GATE;
+        static MEDIACORE_API const uint32_t LIMITER;
+        static MEDIACORE_API const uint32_t EQUALIZER;
+        static MEDIACORE_API const uint32_t COMPRESSOR;
 
         virtual bool Init(uint32_t composeFlags, const std::string& sampleFormat, uint32_t channels, uint32_t sampleRate) = 0;
         virtual bool ProcessData(const ImGui::ImMat& in, std::list<ImGui::ImMat>& out) = 0;
