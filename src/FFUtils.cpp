@@ -37,11 +37,7 @@ extern "C"
     #include "libavfilter/buffersink.h"
 }
 
-#ifdef _WIN32
-#define YUV_CONVERT_PLANAR  0
-#else
 #define YUV_CONVERT_PLANAR  1
-#endif
 
 #define ISYUV420P(format)   \
 (format == AV_PIX_FMT_YUV420P || \
@@ -405,7 +401,7 @@ bool HwFrameToSwFrame(AVFrame* swfrm, const AVFrame* hwfrm)
     int fferr;
     av_frame_unref(swfrm);
     fferr = av_hwframe_map(swfrm, hwfrm, AV_HWFRAME_MAP_READ);
-    if (fferr < 0 || swfrm->width == 0 || swfrm->height == 0)
+    if (fferr < 0)
     {
         // Log(WARN) << "av_hwframe_map() FAILED! fferr=" << fferr << "." << endl;
         av_frame_unref(swfrm);
@@ -416,6 +412,11 @@ bool HwFrameToSwFrame(AVFrame* swfrm, const AVFrame* hwfrm)
             Log(Error) << "av_hwframe_map and av_hwframe_transfer_data() FAILED! fferr=" << fferr << "." << endl;
             return false;
         }
+    }
+    if (swfrm->width == 0 || swfrm->height == 0)
+    {
+        swfrm->width = hwfrm->width;
+        swfrm->height = hwfrm->height;
     }
     av_frame_copy_props(swfrm, hwfrm);
     return true;
@@ -549,20 +550,6 @@ bool ConvertAVFrameToImMat(const AVFrame* avfrm, ImGui::ImMat& vmat, double time
 
 bool ConvertAVFrameToImMat(const AVFrame* avfrm, std::vector<ImGui::ImMat>& vmat, double timestamp)
 {
-    SelfFreeAVFramePtr swfrm;
-    if (IsHwFrame(avfrm))
-    {
-        swfrm = AllocSelfFreeAVFramePtr();
-        if (!swfrm)
-        {
-            Log(Error) << "FAILED to allocate new AVFrame for ImMat conversion!" << endl;
-            return false;
-        }
-        if (!HwFrameToSwFrame(swfrm.get(), avfrm))
-            return false;
-        avfrm = swfrm.get();
-    }
-
     const AVPixFmtDescriptor* desc = av_pix_fmt_desc_get((AVPixelFormat)avfrm->format);
     if (desc->nb_components <= 0 || desc->nb_components > 4)
     {
@@ -813,6 +800,19 @@ bool AVFrameToImMatConverter::ConvertImage(const AVFrame* avfrm, ImGui::ImMat& o
 #if IMGUI_VULKAN_SHADER
 #if YUV_CONVERT_PLANAR
         std::vector<ImGui::ImMat> inMat;
+        SelfFreeAVFramePtr swfrm;
+        if (IsHwFrame(avfrm))
+        {
+            swfrm = AllocSelfFreeAVFramePtr();
+            if (!swfrm)
+            {
+                Log(Error) << "FAILED to allocate new AVFrame for ImMat conversion!" << endl;
+                return false;
+            }
+            if (!HwFrameToSwFrame(swfrm.get(), avfrm))
+                return false;
+            avfrm = swfrm.get();
+        }
         if (!ConvertAVFrameToImMat(avfrm, inMat, timestamp))
         {
             m_errMsg = "Failed to invoke 'ConvertAVFrameToImMat()'!";
