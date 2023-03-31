@@ -442,8 +442,8 @@ private:
                         }
                         else
                         {
-                            m_logger->Log(WARN) << "'avformat_seek_file' does NOT function NORMAL! Return packet pts(" << avpkt.pts
-                                << ") is smaller than 'searchStart' pts(" << searchStart << ")." << endl;
+                            m_logger->Log(DEBUG) << "Parsing file '" << m_url << "', returned packet pts("
+                                    << avpkt.pts << ") is smaller than 'searchStart' pts(" << searchStart << ")." << endl;
                             searchStart += ptsStep;
                             fferr = AVERROR(EAGAIN);
                         }

@@ -1386,7 +1386,7 @@ private:
                                 m_audReadOffset = (int)(((double)CvtAudPtsToMts(readfrm->pts)/1000-currwnd.readPos)*m_swrOutSampleRate)*blockAlign;
                             if (m_audReadOffset < 0)
                             {
-                                m_logger->Log(WARN) << "m_audReadOffset=" << m_audReadOffset << " < 0, WRONG!" << endl;
+                                m_logger->Log(DEBUG) << "m_audReadOffset=" << m_audReadOffset << " < 0, WRONG!" << endl;
                                 m_audReadOffset = 0;
                             }
                             skipSize = m_audReadOffset;
@@ -1818,7 +1818,7 @@ private:
         }
         if (!enqTask)
         {
-            m_logger->Log(WARN) << "Dropping VF ts=" << ts << ", pts=" << frm->pts << " due to no matching task is found." << endl;
+            m_logger->Log(DEBUG) << "Dropping VF ts=" << ts << ", pts=" << frm->pts << " due to no matching task is found." << endl;
             return false;
         }
         if (!foundMatchPacket)
