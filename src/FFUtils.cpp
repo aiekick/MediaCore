@@ -573,28 +573,37 @@ bool ConvertAVFrameToImMat(const AVFrame* avfrm, std::vector<ImGui::ImMat>& vmat
         return false;
     
     ImColorFormat color_format = clrfmt;
-    const int width = avfrm->linesize[0] / (desc->comp[0].step > 0 ? desc->comp[0].step : 1);
+    const int linesize = avfrm->linesize[0] / (desc->comp[0].step > 0 ? desc->comp[0].step : 1);
+    const int width = avfrm->width;
     const int height = avfrm->height;
     int channel = ISNV12(avfrm->format) ? 2 : desc->nb_components;
     ImDataType dataType = bitDepth > 8 ? IM_DT_INT16 : IM_DT_INT8;
     for (int i = 0; i < desc->nb_components; i++)
     {
         ImGui::ImMat mat_component;
+        int chLinesize = linesize;
         int chWidth = width;
         int chHeight = height;
         if ((desc->flags&AV_PIX_FMT_FLAG_RGB) == 0 && i > 0)
         {
+            chLinesize >>= desc->log2_chroma_w;
             chWidth >>= desc->log2_chroma_w;
             chHeight >>= desc->log2_chroma_h;
         }
         if (ISNV12(avfrm->format) && i > 0)
+        {
+            chLinesize <<= 1;
             chWidth <<= 1;
+        }
         
         if (desc->nb_components > i && desc->comp[i].plane == i)
         {
             uint8_t* src_data = avfrm->data[i]+desc->comp[i].offset;
             if (i < channel)
-                mat_component.create_type(chWidth, chHeight, 1, src_data, dataType);
+            {
+                mat_component.create_type(chLinesize, chHeight, 1, src_data, dataType);
+                mat_component.dw = chWidth;
+            }
             vmat.push_back(mat_component);
         }
     }
