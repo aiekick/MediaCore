@@ -853,7 +853,7 @@ bool AVFrameToImMatConverter::ConvertImage(const AVFrame* avfrm, ImGui::ImMat& o
         rgbMat.color_format = IM_CF_ABGR;
         rgbMat.w = m_outWidth;
         rgbMat.h = m_outHeight;
-        if (!m_imgClrCvt->YUV2RGBA(inMat[0], inMat[1], inMat.size() > 2 ? inMat[2] : ImGui::ImMat(), rgbMat, m_resizeInterp))
+        if (m_imgClrCvt->YUV2RGBA(inMat[0], inMat[1], inMat.size() > 2 ? inMat[2] : ImGui::ImMat(), rgbMat, m_resizeInterp) < 0.f)
         {
             m_errMsg = m_imgClrCvt->GetError();
             return false;
@@ -891,7 +891,7 @@ bool AVFrameToImMatConverter::ConvertImage(const AVFrame* avfrm, ImGui::ImMat& o
         rgbMat.color_format = IM_CF_ABGR;
         rgbMat.w = m_outWidth;
         rgbMat.h = m_outHeight;
-        if (!m_imgClrCvt->ConvertColorFormat(inMat, rgbMat, m_resizeInterp))
+        if (m_imgClrCvt->ConvertColorFormat(inMat, rgbMat, m_resizeInterp) < 0.f)
         {
             m_errMsg = m_imgClrCvt->GetError();
             return false;
@@ -1205,7 +1205,7 @@ bool ImMatToAVFrameConverter::ConvertImage(const ImGui::ImMat& vmat, AVFrame* av
             yuvMat.color_format = m_outMatClrfmt;
             yuvMat.color_space = m_outMatClrspc;
             yuvMat.color_range = m_outMatClrrng;
-            if (!m_imgClrCvt->ConvertColorFormat(inMat, yuvMat))
+            if (m_imgClrCvt->ConvertColorFormat(inMat, yuvMat) < 0.f)
             {
                 m_errMsg = m_imgClrCvt->GetError();
                 return false;
