@@ -37,6 +37,7 @@ extern "C"
     #include "libavfilter/buffersink.h"
 }
 
+#define HWFRAME_MAPPING     1
 #define YUV_CONVERT_PLANAR  1
 
 #define ISYUV420P(format)   \
@@ -400,6 +401,7 @@ bool HwFrameToSwFrame(AVFrame* swfrm, const AVFrame* hwfrm)
 {
     int fferr;
     av_frame_unref(swfrm);
+#if HWFRAME_MAPPING
     fferr = av_hwframe_map(swfrm, hwfrm, AV_HWFRAME_MAP_READ);
     if (fferr < 0)
     {
@@ -418,6 +420,15 @@ bool HwFrameToSwFrame(AVFrame* swfrm, const AVFrame* hwfrm)
         swfrm->width = hwfrm->width;
         swfrm->height = hwfrm->height;
     }
+#else
+    swfrm->format = (int)AV_PIX_FMT_NONE;
+    fferr = av_hwframe_transfer_data(swfrm, hwfrm, 0);
+    if (fferr < 0)
+    {
+        Log(Error) << "av_hwframe_map and av_hwframe_transfer_data() FAILED! fferr=" << fferr << "." << endl;
+        return false;
+    }
+#endif
     av_frame_copy_props(swfrm, hwfrm);
     return true;
 }
@@ -842,7 +853,7 @@ bool AVFrameToImMatConverter::ConvertImage(const AVFrame* avfrm, ImGui::ImMat& o
         rgbMat.color_format = IM_CF_ABGR;
         rgbMat.w = m_outWidth;
         rgbMat.h = m_outHeight;
-        if (!m_imgClrCvt->YUV2RGBA(inMat[0], inMat[1], inMat.size() > 2 ? inMat[2] : ImGui::ImMat(), rgbMat, m_resizeInterp))
+        if (m_imgClrCvt->YUV2RGBA(inMat[0], inMat[1], inMat.size() > 2 ? inMat[2] : ImGui::ImMat(), rgbMat, m_resizeInterp) < 0.f)
         {
             m_errMsg = m_imgClrCvt->GetError();
             return false;
@@ -880,7 +891,7 @@ bool AVFrameToImMatConverter::ConvertImage(const AVFrame* avfrm, ImGui::ImMat& o
         rgbMat.color_format = IM_CF_ABGR;
         rgbMat.w = m_outWidth;
         rgbMat.h = m_outHeight;
-        if (!m_imgClrCvt->ConvertColorFormat(inMat, rgbMat, m_resizeInterp))
+        if (m_imgClrCvt->ConvertColorFormat(inMat, rgbMat, m_resizeInterp) < 0.f)
         {
             m_errMsg = m_imgClrCvt->GetError();
             return false;
@@ -1194,7 +1205,7 @@ bool ImMatToAVFrameConverter::ConvertImage(const ImGui::ImMat& vmat, AVFrame* av
             yuvMat.color_format = m_outMatClrfmt;
             yuvMat.color_space = m_outMatClrspc;
             yuvMat.color_range = m_outMatClrrng;
-            if (!m_imgClrCvt->ConvertColorFormat(inMat, yuvMat))
+            if (m_imgClrCvt->ConvertColorFormat(inMat, yuvMat) < 0.f)
             {
                 m_errMsg = m_imgClrCvt->GetError();
                 return false;
