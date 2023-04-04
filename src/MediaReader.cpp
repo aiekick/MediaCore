@@ -631,7 +631,7 @@ public:
             m_errMsg = "This 'MediaReader' instance is NOT STARTED yet!";
             return false;
         }
-        if (pos < 0 || pos >= m_vidDurTs)
+        if (pos < 0 || (!m_isImage && pos >= m_vidDurTs))
         {
             m_errMsg = "Invalid argument! 'pos' can NOT be negative or larger than video's duration.";
             eof = true;

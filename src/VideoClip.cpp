@@ -55,10 +55,23 @@ public:
         m_hReader->EnableHwAccel(VideoClip::USE_HWACCEL);
         if (!m_hReader->Open(hParser))
             throw runtime_error(m_hReader->GetError());
+        uint32_t readerWidth, readerHeight;
+        if (outWidth*vidStm->height > outHeight*vidStm->width)
+        {
+            readerHeight = outHeight;
+            readerWidth = vidStm->width*outHeight/vidStm->height;
+        }
+        else
+        {
+            readerWidth = outWidth;
+            readerHeight = vidStm->height*outWidth/vidStm->width;
+        }
+        readerWidth += readerWidth&0x1;
+        readerHeight += readerHeight&0x1;
         ImInterpolateMode interpMode = IM_INTERPOLATE_BICUBIC;
-        if (outWidth*outHeight < vidStm->width*vidStm->height)
+        if (readerWidth*readerHeight < vidStm->width*vidStm->height)
             interpMode = IM_INTERPOLATE_AREA;
-        if (!m_hReader->ConfigVideoReader(outWidth, outHeight))
+        if (!m_hReader->ConfigVideoReader(readerWidth, readerHeight, IM_CF_RGBA, interpMode))
             throw runtime_error(m_hReader->GetError());
         if (frameRate.num <= 0 || frameRate.den <= 0)
             throw invalid_argument("Invalid argument value for 'frameRate'!");
@@ -338,7 +351,23 @@ public:
         m_hReader = MediaReader::CreateInstance();
         if (!m_hReader->Open(hParser))
             throw runtime_error(m_hReader->GetError());
-        if (!m_hReader->ConfigVideoReader(0u, 0u))
+        uint32_t readerWidth, readerHeight;
+        if (outWidth*vidStm->height > outHeight*vidStm->width)
+        {
+            readerHeight = outHeight;
+            readerWidth = vidStm->width*outHeight/vidStm->height;
+        }
+        else
+        {
+            readerWidth = outWidth;
+            readerHeight = vidStm->height*outWidth/vidStm->width;
+        }
+        readerWidth += readerWidth&0x1;
+        readerHeight += readerHeight&0x1;
+        ImInterpolateMode interpMode = IM_INTERPOLATE_BICUBIC;
+        if (readerWidth*readerHeight < vidStm->width*vidStm->height)
+            interpMode = IM_INTERPOLATE_AREA;
+        if (!m_hReader->ConfigVideoReader(readerWidth, readerHeight, IM_CF_RGBA, interpMode))
             throw runtime_error(m_hReader->GetError());
         if (duration <= 0)
             throw invalid_argument("Argument 'duration' must be positive!");

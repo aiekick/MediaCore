@@ -234,6 +234,7 @@ namespace MediaCore
     void VideoTransformFilter_VulkanImpl::UpdatePassThrough()
     {
         if (m_realScaleRatioH == 1 && m_realScaleRatioV == 1 &&
+            m_inWidth == m_outWidth && m_inHeight == m_outHeight &&
             m_cropL == 0 && m_cropT == 0 && m_cropR == 0 && m_cropB == 0 &&
             m_rotateAngle == 0 &&
             m_posOffsetH == 0 && m_posOffsetV == 0)
