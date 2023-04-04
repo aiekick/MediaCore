@@ -24,6 +24,7 @@
 #include "VideoTransformFilter.h"
 #include "Logger.h"
 #include "DebugHelper.h"
+#include "SysUtils.h"
 
 using namespace std;
 using namespace Logger;
@@ -81,7 +82,6 @@ public:
 
     ~VideoClip_VideoImpl()
     {
-        m_frameCache.clear();
     }
 
     Holder Clone(uint32_t outWidth, uint32_t outHeight, const Ratio& frameRate) const override;
@@ -202,38 +202,12 @@ public:
         }
 
         ImGui::ImMat image;
-        // try to read image from cache
-        const double ts = (double)pos/1000;
-        const function<bool(ImGui::ImMat&)> checkFunc1 = [ts] (ImGui::ImMat& m) { return m.time_stamp > ts; };
-        const function<bool(ImGui::ImMat&)> checkFunc2 = [ts] (ImGui::ImMat& m) { return m.time_stamp < ts; };
-        const bool readForward = m_hReader->IsDirectionForward();
-        auto checkFunc = readForward ? checkFunc1 : checkFunc2;
-        auto iter = find_if(m_frameCache.begin(), m_frameCache.end(), checkFunc);
-        if (iter != m_frameCache.end())
-        {
-            if (iter != m_frameCache.begin())
-            {
-                iter--;
-                image = *iter;
-            }
-            else
-                m_frameCache.clear();
-        }
-
-        // read image from MediaReader
-        if (image.empty())
-        {
-            if (!m_hReader->ReadVideoFrame((double)(pos+m_startOffset)/1000, image, eof))
-                throw runtime_error(m_hReader->GetError());
-            if (!image.empty() && (m_frameCache.empty() ||
-                (readForward && image.time_stamp > m_frameCache.back().time_stamp) ||
-                (!readForward && image.time_stamp < m_frameCache.back().time_stamp)))
-            {
-                m_frameCache.push_back(image);
-                while (m_frameCache.size() > m_frameCacheSize)
-                    m_frameCache.pop_front();
-            }
-        }
+        // string filename = SysUtils::ExtractFileBaseName(m_hInfo->url);
+        // AddCheckPoint(filename+", t0");
+        if (!m_hReader->ReadVideoFrame((double)(pos+m_startOffset)/1000, image, eof))
+            throw runtime_error(m_hReader->GetError());
+        // AddCheckPoint(filename+", t1");
+        // LogCheckPointsTimeInfo();
         frames.push_back({CorrelativeFrame::PHASE_SOURCE_FRAME, m_id, m_trackId, image});
 
         // process with external filter
@@ -254,17 +228,8 @@ public:
             return;
         if (pos < 0)
             pos = 0;
-        const bool readForward = m_hReader->IsDirectionForward();
-        const double ts = (double)pos/1000;
-        if (m_frameCache.empty() ||
-            (readForward && (ts < m_frameCache.front().time_stamp || ts > m_frameCache.back().time_stamp)) ||
-            (!readForward && (ts > m_frameCache.front().time_stamp || ts < m_frameCache.back().time_stamp)))
-        {
-            // Log(DEBUG) << "!!! clear frame cache !!!" << endl;
-            m_frameCache.clear();
-            if (!m_hReader->SeekTo((double)(pos+m_startOffset)/1000))
-                throw runtime_error(m_hReader->GetError());
-        }
+        if (!m_hReader->SeekTo((double)(pos+m_startOffset)/1000))
+            throw runtime_error(m_hReader->GetError());
         m_eof = false;
     }
 
@@ -287,8 +252,6 @@ public:
 
     void SetDirection(bool forward) override
     {
-        // Log(DEBUG) << "!!! clear frame cache(2) !!!" << endl;
-        m_frameCache.clear();
         m_hReader->SetDirection(forward);
     }
 
@@ -330,8 +293,6 @@ private:
     VideoFilter::Holder m_hFilter;
     VideoTransformFilterHolder m_hWarpFilter;
     int64_t m_wakeupRange{1000};
-    std::list<ImGui::ImMat> m_frameCache;
-    uint32_t m_frameCacheSize{4};
 };
 
 static const auto VIDEO_CLIP_HOLDER_VIDEOIMPL_DELETER = [] (VideoClip* p) {

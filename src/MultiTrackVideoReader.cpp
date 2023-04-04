@@ -325,8 +325,10 @@ public:
             return false;
         }
 
+        m_nextReadPos = INT64_MIN;
         m_seekPos = pos;
         m_seeking = true;
+        // m_logger->Log(DEBUG) << "---------------------> Set seekPos=" << pos << endl;
 
         if (!async)
         {
@@ -374,12 +376,13 @@ public:
             return false;
         }
 
-        bool needSeek = false;
-        uint32_t targetFrmidx = (int64_t)(floor((double)pos*m_frameRate.num/(m_frameRate.den*1000)));
-        if ((m_readForward && (targetFrmidx < m_readFrameIdx || targetFrmidx-m_readFrameIdx >= m_outputCacheSize)) ||
-            (!m_readForward && (targetFrmidx > m_readFrameIdx || m_readFrameIdx-targetFrmidx >= m_outputCacheSize)))
+        int64_t targetFrmidx = (int64_t)(floor((double)pos*m_frameRate.num/(m_frameRate.den*1000)));
+        if (pos != m_prevReadPos)
         {
-            needSeek = true;
+            m_logger->Log(DEBUG) << ">> Read video frame at pos=" << pos << ", targetFrmidx=" << targetFrmidx
+                    << ", m_readFrameIdx=" << m_readFrameIdx << endl;
+            m_prevReadPos = pos;
+            m_nextReadPos = pos+33;
         }
 
         if (nonblocking)
@@ -387,57 +390,63 @@ public:
             lock_guard<mutex> lk2(m_outputCacheLock);
             if ((m_readForward && targetFrmidx > m_readFrameIdx) || (!m_readForward && m_readFrameIdx > targetFrmidx))
             {
-                uint32_t popCnt = m_readForward ? targetFrmidx-m_readFrameIdx : m_readFrameIdx-targetFrmidx;
-                while (popCnt-- > 0 && !m_outputCache.empty())
+                auto popCnt = m_readForward ? targetFrmidx-m_readFrameIdx : m_readFrameIdx-targetFrmidx;
+                if (popCnt >= m_outputCache.size())
                 {
-                    m_outputCache.pop_front();
-                    if (m_readForward)
-                        m_readFrameIdx++;
-                    else
-                        m_readFrameIdx--;
+                    popCnt = m_outputCache.size();
+                    m_outputCache.clear();
                 }
+                else
+                {
+                    int i = popCnt;
+                    while (i-- > 0)
+                        m_outputCache.pop_front();
+                }
+                if (m_readForward)
+                    m_readFrameIdx += popCnt;
+                else
+                    m_readFrameIdx -= popCnt;
             }
             if (precise)
             {
                 if (targetFrmidx != m_readFrameIdx || m_outputCache.empty())
                 {
-                    if (needSeek)
-                        SeekTo(pos, true);
+                    m_logger->Log(DEBUG) << "---> NO AVAILABLE frame" << endl;
                     return false;
                 }
                 frames = m_outputCache.front();
             }
-            else if (!m_outputCache.empty())
-            {
-                m_logger->Log(VERBOSE) << "---> USE m_outputCache.front()" << endl;
-                frames = m_outputCache.front();
-            }
             else if (!m_seekingFlash.empty())
             {
-                m_logger->Log(VERBOSE) << "---> USE m_seekingFlash." << endl;
+                m_logger->Log(DEBUG) << "---> USE m_seekingFlash." << endl;
                 frames = m_seekingFlash;
+            }
+            else if (!m_outputCache.empty())
+            {
+                m_logger->Log(DEBUG) << "---> USE m_outputCache.front()" << endl;
+                frames = m_outputCache.front();
             }
             else
             {
                 m_logger->Log(WARN) << "No AVAILABLE frame to read!" << endl;
-                if (needSeek)
-                    SeekTo(pos, true);
                 return false;
             }
 
             auto& vmat = frames[0].frame;
             const double timestamp = (double)pos/1000;
-            m_logger->Log(VERBOSE) << "--> ReadVideoFrame lagging is " << timestamp-vmat.time_stamp << " second(s)." << endl;
+            // m_logger->Log(DEBUG) << "--> ReadVideoFrame lagging is " << timestamp-vmat.time_stamp << " second(s)." << endl;
 
             if (!m_subtrks.empty() && !frames.empty())
                 frames[0].frame = BlendSubtitle(frames[0].frame);
-            if (needSeek)
-                SeekTo(pos, true);
         }
         else
         {
-            if (needSeek && !SeekTo(pos, false))
-                return false;
+            if ((m_readForward && (targetFrmidx < m_readFrameIdx || targetFrmidx-m_readFrameIdx >= m_outputCacheSize)) ||
+                (!m_readForward && (targetFrmidx > m_readFrameIdx || m_readFrameIdx-targetFrmidx >= m_outputCacheSize)))
+            {
+                if (!SeekTo(pos, false))
+                    return false;
+            }
 
             // the frame queue may not be filled with the target frame, wait for the mixing thread to fill it
             bool lockAquaired = false;
@@ -462,7 +471,7 @@ public:
             lock_guard<mutex> lk2(m_outputCacheLock, adopt_lock);
             if ((m_readForward && targetFrmidx > m_readFrameIdx) || (!m_readForward && m_readFrameIdx > targetFrmidx))
             {
-                uint32_t popCnt = m_readForward ? targetFrmidx-m_readFrameIdx : m_readFrameIdx-targetFrmidx;
+                auto popCnt = m_readForward ? targetFrmidx-m_readFrameIdx : m_readFrameIdx-targetFrmidx;
                 while (popCnt-- > 0)
                 {
                     m_outputCache.pop_front();
@@ -849,6 +858,7 @@ private:
             if (m_seeking.exchange(false))
             {
                 const int64_t seekPos = m_seekPos;
+                m_logger->Log(DEBUG) << "\t\t ===== Seeking to pos=" << seekPos << endl;
                 m_readFrameIdx = (int64_t)(floor((double)seekPos*m_frameRate.num/(m_frameRate.den*1000)));
                 for (auto track : m_tracks)
                     track->SeekTo(seekPos);
@@ -857,6 +867,35 @@ private:
                     m_outputCache.clear();
                 }
                 afterSeek = true;
+            }
+
+            if (m_nextReadPos != INT64_MIN)
+            {
+                int64_t nextReadFrameIdx = (int64_t)(floor((double)m_nextReadPos*m_frameRate.num/(m_frameRate.den*1000)))-1;
+                if (nextReadFrameIdx > m_readFrameIdx)
+                {
+                    lock_guard<mutex> lk(m_outputCacheLock);
+                    auto popCnt = m_readForward ? nextReadFrameIdx-m_readFrameIdx : m_readFrameIdx-nextReadFrameIdx;
+                    while (popCnt-- > 0 && !m_outputCache.empty())
+                    {
+                        m_outputCache.pop_front();
+                        if (m_readForward)
+                            m_readFrameIdx++;
+                        else
+                            m_readFrameIdx--;
+                    }
+                    if (m_readFrameIdx != nextReadFrameIdx)
+                    {
+                        lock_guard<recursive_mutex> trackLk(m_trackLock);   
+                        for (auto pTrack : m_tracks)
+                        {
+                            pTrack->SetReadFrameIndex(nextReadFrameIdx);
+                        }
+                        m_readFrameIdx = nextReadFrameIdx;
+                        m_logger->Log(DEBUG) << "\t-----=====-----> SetReadFrameIndex(" << nextReadFrameIdx << ") <-----=====-----" << endl;
+                    }
+                }
+                m_nextReadPos = INT64_MIN;
             }
 
             if (m_outputCache.size() < m_outputCacheSize)
@@ -895,6 +934,7 @@ private:
                     mixedFrame.time_stamp = timestamp;
                 }
                 frames[0].frame = mixedFrame;
+                m_logger->Log(DEBUG) << "---------> Got mixed frame at pos=" << (int64_t)(timestamp*1000) << endl;
 
                 if (afterSeek)
                 {
@@ -914,6 +954,10 @@ private:
                     m_outputCache.push_back(frames);
                     m_seekingFlash = frames;
                     idleLoop = false;
+                }
+                else
+                {
+                    m_logger->Log(WARN) << "!!! Mixed frame discarded !!!" << endl;
                 }
             }
 
@@ -981,8 +1025,10 @@ private:
     Ratio m_frameRate;
     double m_frameInterval{0};
     int64_t m_duration{0};
-    uint32_t m_readFrameIdx{0};
+    int64_t m_readFrameIdx{0};
     bool m_readForward{true};
+    int64_t m_prevReadPos{INT64_MIN};
+    int64_t m_nextReadPos{INT64_MIN};
 
     int64_t m_seekPos{0};
     atomic_bool m_seeking{false};

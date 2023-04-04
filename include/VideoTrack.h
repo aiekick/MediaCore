@@ -42,6 +42,7 @@ struct VideoTrack
     virtual bool IsVisible() const = 0;
     virtual void ReadVideoFrame(std::vector<CorrelativeFrame>& frames, ImGui::ImMat& out) = 0;
     virtual void SeekTo(int64_t pos) = 0;
+    virtual void SetReadFrameIndex(int64_t index) = 0;
 
     virtual VideoClip::Holder AddNewClip(int64_t clipId, MediaParser::Holder hParser, int64_t start, int64_t startOffset, int64_t endOffset, int64_t readPos) = 0;
     virtual void InsertClip(VideoClip::Holder hClip) = 0;

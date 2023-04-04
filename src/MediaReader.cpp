@@ -1262,6 +1262,11 @@ private:
         int64_t pts = CvtMtsToPts(ts*1000);
         while (!m_close)
         {
+            // check if the readPos has been changed by another operation, such as Seek.
+            // if so, abort this read operation
+            if (m_cacheWnd.readPos != ts)
+                return false;
+
             bool isBadTs = false;
             // find the tasks the required frame may possibly reside in
             list<GopDecodeTaskHolder> targetTasks;

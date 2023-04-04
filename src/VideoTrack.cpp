@@ -355,6 +355,11 @@ public:
         m_readFrames = (int64_t)(pos*m_frameRate.num/(m_frameRate.den*1000));
     }
 
+    void SetReadFrameIndex(int64_t index) override
+    {
+        m_readFrames = index;
+    }
+
     void ReadVideoFrame(vector<CorrelativeFrame>& frames, ImGui::ImMat& out) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
