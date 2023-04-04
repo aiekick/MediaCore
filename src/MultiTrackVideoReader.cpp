@@ -908,23 +908,30 @@ private:
                 {
                     lock_guard<recursive_mutex> trackLk(m_trackLock);
                     auto trackIter = m_tracks.begin();
+                    bool isFirstTrack = true;
                     while (trackIter != m_tracks.end())
                     {
+                        auto hTrack = *trackIter++;
+                        if (!hTrack->IsVisible())
+                        {
+                            hTrack->SkipOneFrame();
+                            continue;
+                        }
+
                         ImGui::ImMat vmat;
-                        (*trackIter)->ReadVideoFrame(frames, vmat);
-                        if (!vmat.empty() && (*trackIter)->IsVisible())
+                        hTrack->ReadVideoFrame(frames, vmat);
+                        if (!vmat.empty())
                         {
                             if (mixedFrame.empty())
                                 mixedFrame = vmat;
                             else
                                 mixedFrame = m_hMixBlender->Blend(vmat, mixedFrame);
                         }
-                        if (trackIter == m_tracks.begin())
+                        if (isFirstTrack)
                             timestamp = vmat.time_stamp;
                         else if (timestamp != vmat.time_stamp)
                             m_logger->Log(WARN) << "'vmat' got from non-1st track has DIFFERENT TIMESTAMP against the 1st track! "
                                 << timestamp << " != " << vmat.time_stamp << "." << endl;
-                        trackIter++;
                     }
                 }
                 if (mixedFrame.empty())

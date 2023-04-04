@@ -360,6 +360,14 @@ public:
         m_readFrames = index;
     }
 
+    void SkipOneFrame() override
+    {
+        if (m_readForward)
+            m_readFrames++;
+        else
+            m_readFrames--;
+    }
+
     void ReadVideoFrame(vector<CorrelativeFrame>& frames, ImGui::ImMat& out) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
