@@ -55,6 +55,9 @@ public:
         m_hReader->EnableHwAccel(VideoClip::USE_HWACCEL);
         if (!m_hReader->Open(hParser))
             throw runtime_error(m_hReader->GetError());
+        ImInterpolateMode interpMode = IM_INTERPOLATE_BICUBIC;
+        if (outWidth*outHeight < vidStm->width*vidStm->height)
+            interpMode = IM_INTERPOLATE_AREA;
         if (!m_hReader->ConfigVideoReader(outWidth, outHeight))
             throw runtime_error(m_hReader->GetError());
         if (frameRate.num <= 0 || frameRate.den <= 0)
