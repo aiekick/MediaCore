@@ -68,7 +68,7 @@ MEDIACORE_API bool ConvertAVFrameToImMat(const AVFrame* avfrm, ImGui::ImMat& vma
 MEDIACORE_API bool ConvertAVFrameToImMat(const AVFrame* avfrm, std::vector<ImGui::ImMat>& vmat, double timestamp);
 MEDIACORE_API bool ConvertImMatToAVFrame(const ImGui::ImMat& vmat, AVFrame* avfrm, int64_t pts);
 
-class AVFrameToImMatConverter
+class MEDIACORE_API AVFrameToImMatConverter
 {
 public:
     AVFrameToImMatConverter();
