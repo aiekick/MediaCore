@@ -59,6 +59,7 @@ namespace MediaCore
         uint32_t width{0};
         uint32_t height{0};
         std::string format;
+        std::string codec;
         Ratio sampleAspectRatio;
         Ratio avgFrameRate;
         Ratio realFrameRate;
@@ -74,6 +75,7 @@ namespace MediaCore
         uint32_t channels{0};
         uint32_t sampleRate{0};
         std::string format;
+        std::string codec;
         uint8_t bitDepth{0};
     };
 

@@ -2236,6 +2236,8 @@ MediaCore::MediaInfo::Holder GenerateMediaInfoByAVFormatContext(const AVFormatCo
             vidStream->format = string(formatName ? formatName : "unknown");
             if ((AVPixelFormat)codecpar->format == AV_PIX_FMT_NONE)
                 hInfo->isComplete = false;
+            auto cd = avcodec_descriptor_get(codecpar->codec_id);
+            vidStream->codec = string(cd->long_name ? cd->long_name : cd->name ? cd->name : "unknown");
             if (stream->sample_aspect_ratio.num > 0 && stream->sample_aspect_ratio.den > 0)
                 vidStream->sampleAspectRatio = MediaInfoRatioFromAVRational(stream->sample_aspect_ratio);
             else
@@ -2301,6 +2303,8 @@ MediaCore::MediaInfo::Holder GenerateMediaInfoByAVFormatContext(const AVFormatCo
             audStream->format = string(formatName ? formatName : "unknown");
             if ((AVSampleFormat)codecpar->format == AV_SAMPLE_FMT_NONE)
                 hInfo->isComplete = false;
+            auto cd = avcodec_descriptor_get(codecpar->codec_id);
+            audStream->codec = string(cd->long_name ? cd->long_name : cd->name ? cd->name : "unknown");
             audStream->bitDepth = av_get_bytes_per_sample((AVSampleFormat)codecpar->format) << 3;
             hStream = MediaCore::Stream::Holder(audStream);
         }
