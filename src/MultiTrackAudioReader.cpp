@@ -18,6 +18,7 @@
 #include <sstream>
 #include <thread>
 #include <mutex>
+#include <atomic>
 #include <list>
 #include <algorithm>
 #include "AudioTrack.h"
@@ -81,6 +82,7 @@ public:
         m_isTrackOutputPlanar = av_sample_fmt_is_planar(m_trackOutSmpfmt);
         m_matAvfrmCvter = new AudioImMatAVFrameConverter();
         m_mixOutDataType = GetDataTypeFromSampleFormat(m_mixOutSmpfmt);
+        m_outMtsPerFrame = av_rescale_q(m_outSamplesPerFrame, {1, (int)m_outSampleRate}, MILLISEC_TIMEBASE);
 
         m_aeFilter = AudioEffectFilter::CreateInstance("AEFilter#mix");
         if (!m_aeFilter->Init(
@@ -292,7 +294,7 @@ public:
         return true;
     }
 
-    bool SeekTo(int64_t pos) override
+    bool SeekTo(int64_t pos, bool probeMode = false) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_started)
@@ -306,15 +308,37 @@ public:
             return false;
         }
 
-        TerminateMixingThread();
+        m_logger->Log(DEBUG) << "------> SeekTo(pos=" << pos << "), probeMode=" << probeMode << endl;
+        if (probeMode)
+        {
+            if (fabs(m_prevSeekPos-pos) <= m_probeDuration)
+            {
+                m_logger->Log(DEBUG) << "---->>> Too small seek gap, skip this seek operation" << endl;
+            }
+            else
+            {
+                m_prevSeekPos = m_seekPos = pos;
+                m_seeking = true;
+                m_probeMode = probeMode;
+            }
+        }
+        else
+        {
+            TerminateMixingThread();
 
-        m_outputMats.clear();
-        m_samplePos = pos*m_outSampleRate/1000;
-        m_readPos = pos;
-        for (auto track : m_tracks)
-            track->SeekTo(pos);
+            // disable probe mode effect if there is any
+            m_probeMode = probeMode;
+            m_seeking = false;
+            m_prevSeekPos = m_seekPos = INT64_MIN;
+            m_aeFilter->SetMuted(false);
 
-        StartMixingThread();
+            m_outputMats.clear();
+            m_samplePos = pos*m_outSampleRate/1000;
+            m_readPos = pos;
+            for (auto track : m_tracks)
+                track->SeekTo(pos);
+            StartMixingThread();
+        }
         return true;
     }
 
@@ -350,6 +374,13 @@ public:
         }
 
         m_outputMatsLock.lock();
+        if (m_probeMode && m_outputMats.empty())
+        {
+            m_logger->Log(DEBUG) << "In probe-mode, NO more pcm samples." << endl;
+            m_outputMatsLock.unlock();
+            return false;
+        }
+
         while (m_outputMats.empty() && !m_quit)
         {
             m_outputMatsLock.unlock();
@@ -691,6 +722,47 @@ private:
             m_eof = m_readForward ? mixingPos >= Duration() : mixingPos <= 0;
             if (m_outputMats.size() < m_outputMatsMaxCount)
             {
+                // handle probe mode transition
+                if (m_probeMode)
+                {
+                    if (m_seeking.exchange(false))
+                    {
+                        m_probeStage = -1;
+                        m_aeFilter->SetMuted(true);
+                        m_logger->Log(DEBUG) << "ProbeMode: stage=-1" << endl;
+                    }
+                    else if (m_seekPos != INT64_MIN)
+                    {
+                        {
+                            lock_guard<recursive_mutex> lk(m_trackLock);
+                            for (auto track : m_tracks)
+                                track->SeekTo(m_seekPos);
+                        }
+                        m_seekPos = INT64_MIN;
+                        m_probeStage = 1;
+                        m_aeFilter->SetMuted(false);
+                        m_probeSampleDur = 0;
+                        m_logger->Log(DEBUG) << "ProbeMode: stage=+1" << endl;
+                    }
+                    else if (m_probeStage == 1)
+                    {
+                        m_probeStage = 0;
+                        m_logger->Log(DEBUG) << "ProbeMode: stage= 0" << endl;
+                    }
+                    else if (m_probeStage == -1)
+                    {
+                        // stop reading more samples
+                        this_thread::sleep_for(chrono::milliseconds(5));
+                        continue;
+                    }
+                    else if (m_probeSampleDur >= m_probeDuration)
+                    {
+                        m_probeStage = -1;
+                        m_aeFilter->SetMuted(true);
+                        m_logger->Log(DEBUG) << "ProbeMode: m_probeSampleDur=" << m_probeSampleDur << endl;
+                    }
+                }
+
                 vector<CorrelativeFrame> corFrames;
                 corFrames.push_back({CorrelativeFrame::PHASE_AFTER_MIXING, 0, 0, ImGui::ImMat()});
                 if (!m_tracks.empty())
@@ -789,6 +861,11 @@ private:
                     m_outputMats.push_back(corFrames);
                     idleLoop = false;
                 }
+
+                if (m_probeMode)
+                {
+                    m_probeSampleDur += m_outMtsPerFrame;
+                }
             }
 
             if (idleLoop)
@@ -821,9 +898,17 @@ private:
     bool m_isTrackOutputPlanar{false};
     uint32_t m_frameSize{0};
     uint32_t m_outSamplesPerFrame{1024};
+    int64_t m_outMtsPerFrame{0};
     int64_t m_readPos{0};
     bool m_readForward{true};
     bool m_eof{false};
+    bool m_probeMode{false};
+    int32_t m_probeStage;  // -1 : fade out; 1 : fade in; 0 : do nothing
+    int64_t m_probeDuration{1000};  // 2000 milliseconds
+    int64_t m_probeSampleDur{0};
+    atomic_bool m_seeking{false};
+    int64_t m_seekPos{INT64_MIN};
+    int64_t m_prevSeekPos{INT64_MIN};
 
     AudioImMatAVFrameConverter* m_matAvfrmCvter{nullptr};
     list<vector<CorrelativeFrame>> m_outputMats;
