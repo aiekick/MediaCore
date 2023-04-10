@@ -904,7 +904,7 @@ private:
     bool m_eof{false};
     bool m_probeMode{false};
     int32_t m_probeStage;  // -1 : fade out; 1 : fade in; 0 : do nothing
-    int64_t m_probeDuration{1000};  // 2000 milliseconds
+    int64_t m_probeDuration{200};  // 200 milliseconds
     int64_t m_probeSampleDur{0};
     atomic_bool m_seeking{false};
     int64_t m_seekPos{INT64_MIN};
