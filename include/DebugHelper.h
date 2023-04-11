@@ -18,6 +18,9 @@
 #pragma once
 #include <chrono>
 #include <string>
+#include <memory>
+#include <utility>
+#include <ostream>
 #include "MediaCore.h"
 #include "Logger.h"
 
@@ -25,6 +28,7 @@ namespace MediaCore
 {
     using SysClock = std::chrono::system_clock;
     using TimePoint = std::chrono::time_point<SysClock>;
+    using TimeSpan = std::pair<TimePoint, TimePoint>;
 
     inline TimePoint GetTimePoint()
     {
@@ -40,4 +44,21 @@ namespace MediaCore
 
     MEDIACORE_API void AddCheckPoint(const std::string& name);
     MEDIACORE_API void LogCheckPointsTimeInfo(Logger::ALogger* logger = nullptr, Logger::Level loglvl = Logger::DEBUG);
+
+    MEDIACORE_API std::ostream& operator<<(std::ostream& os, const TimeSpan& ts);
+
+    struct PerformanceAnalyzer
+    {
+        using Holder = std::shared_ptr<PerformanceAnalyzer>;
+        static MEDIACORE_API Holder CreateInstance(const std::string& name);
+
+        virtual void SetLogInterval(uint32_t millisec) = 0;
+        virtual void Start() = 0;
+        virtual void End() = 0;
+        virtual void SectionStart(const std::string& name) = 0;
+        virtual void SectionEnd() = 0;
+        virtual void EnterSleep() = 0;
+        virtual void QuitSleep() = 0;
+        virtual TimeSpan LogOnInterval(Logger::Level l, Logger::ALogger* logger = nullptr) = 0;
+    };
 }

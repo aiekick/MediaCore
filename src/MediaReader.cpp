@@ -42,6 +42,9 @@ extern "C"
 }
 #include "DebugHelper.h"
 
+#define VIDEO_DECODE_PERFORMANCE_ANALYSIS 1
+#define VIDEO_FRAME_CONVERSION_PERFORMANCE_ANALYSIS 1
+
 using namespace std;
 using namespace Logger;
 
@@ -388,8 +391,8 @@ public:
         m_audAvStm = nullptr;
         m_auddec = nullptr;
 
-        m_prevReadPos = 0;
-        m_prevReadImg.release();
+        m_prevReadResult.first = 0;
+        m_prevReadResult.second.release();
         m_readForward = true;
         m_seekPosUpdated = false;
         m_seekPosTs = 0;
@@ -462,8 +465,8 @@ public:
         m_hParser = nullptr;
         m_hMediaInfo = nullptr;
 
-        m_prevReadPos = 0;
-        m_prevReadImg.release();
+        m_prevReadResult.first = 0;
+        m_prevReadResult.second.release();
         m_readForward = true;
         m_seekPosUpdated = false;
         m_seekPosTs = 0;
@@ -592,7 +595,7 @@ public:
         if (!m_quitThread || !m_isVideoReader || m_isImage)
             return;
 
-        double readPos = m_prevReadPos;
+        double readPos = m_prevReadResult.first;
         if (m_seekPosUpdated)
             readPos = m_seekPosTs;
 
@@ -651,9 +654,9 @@ public:
         }
         lock_guard<recursive_mutex> lk(m_apiLock);
         eof = false;
-        if (pos == m_prevReadPos && !m_prevReadImg.empty())
+        if (!m_prevReadResult.second.empty() && pos == m_prevReadResult.first)
         {
-            m = m_prevReadImg;
+            m = m_prevReadResult.second;
             return true;
         }
         if (IsSuspended() && !m_isImage)
@@ -664,17 +667,19 @@ public:
 
         bool success = ReadVideoFrame_Internal(pos, m, wait);
         if (success)
-        {
-            m_prevReadPos = pos;
-            m_prevReadImg = m;
-        }
+            m_prevReadResult = {pos, m};
 
         if (m_seekPosUpdated)
         {
             lock_guard<mutex> lk(m_seekPosLock);
+            m_logger->Log(DEBUG) << "     ======================>> seekPosTs = " << m_seekPosTs << endl;
             UpdateCacheWindow(m_seekPosTs);
             m_seekPosUpdated = false;
         }
+
+#if !defined(NDEBUG)
+        // PrintVideoTaskStatus();
+#endif
 
         return success;
     }
@@ -1255,6 +1260,7 @@ private:
 
     bool ReadVideoFrame_Internal(double ts, ImGui::ImMat& m, bool wait)
     {
+        // m_logger->Log(DEBUG) << "   ------------>>>>>>>> ts = " << ts << endl;
         UpdateCacheWindow(ts);
 
         bool foundBestFrame = false;
@@ -1299,13 +1305,22 @@ private:
                 auto iter = find_if(vfAry.begin(), vfAry.end(), [ts](auto& frm) {
                     return frm.ts > ts;
                 });
-                if (iter != vfAry.begin())
-                    iter--;
-                if (ts >= iter->ts && ts-iter->ts < m_vidfrmIntvMts/1000)
+                if (iter != vfAry.end() && iter != vfAry.begin())
                 {
+                    iter--;
                     pBestCandidate = &(*iter);
                     foundBestFrame = true;
                     break;
+                }
+                else if (iter != vfAry.begin())
+                {
+                    iter--;
+                    if (ts >= iter->ts && ts-iter->ts < m_vidfrmIntvMts/1000)
+                    {
+                        pBestCandidate = &(*iter);
+                        foundBestFrame = true;
+                        break;
+                    }
                 }
                 if (!pBestCandidate || iter->ts >= ts && pBestCandidate->ts < ts || fabs(iter->ts-ts) < fabs(pBestCandidate->ts-ts))
                     pBestCandidate = &(*iter);
@@ -1403,7 +1418,6 @@ private:
                             double offset = (double)m_audReadOffset/m_outFrmSize/m_swrOutSampleRate;
                             if (IsPlanar()) offset *= outChannels;
                             pos = m_readForward ? startts+offset : startts-offset;
-                            m_prevReadPos = pos;
                             isPosSet = true;
                         }
                         uint32_t dataSizePerPlan = readfrm->nb_samples*GetAudioOutFrameSize();
@@ -1883,11 +1897,37 @@ private:
         bool avfrmLoaded = false;
         bool needResetDecoder = false;
         bool sentNullPacket = false;
+        int64_t prevOutputPts = INT64_MIN;
+#if VIDEO_DECODE_PERFORMANCE_ANALYSIS == 1
+        list<TimePoint> frameTps;
+        PerformanceAnalyzer::Holder pa = PerformanceAnalyzer::CreateInstance("VideoDecode");
+        pa->SetLogInterval(2000);
+        pa->Start();
+#endif
         while (!m_quitThread)
         {
+#if VIDEO_DECODE_PERFORMANCE_ANALYSIS == 1
+            auto span = pa->LogOnInterval(DEBUG, m_logger);
+            if (span.first.time_since_epoch().count() > 0)
+            {
+                int decfrmCnt = 0;
+                auto iter = frameTps.begin();
+                while (iter != frameTps.end())
+                {
+                    if (*iter < span.first)
+                        iter = frameTps.erase(iter);
+                    else
+                    {
+                        iter++;
+                        decfrmCnt++;
+                    }
+                }
+                m_logger->Log(DEBUG) << "-->> Decoded frames: " << decfrmCnt << ", fps=" << (double)decfrmCnt/chrono::duration_cast<chrono::duration<double>>(span.second-span.first).count() << endl << endl;
+            }
+#endif
+
             bool idleLoop = true;
             bool quitLoop = false;
-
             if (!currTask || currTask->cancel || currTask->decInputEof)
             {
                 GopDecodeTaskHolder oldTask = currTask;
@@ -1903,7 +1943,13 @@ private:
                         avfrmLoaded = false;
                     }
                 }
+#if VIDEO_DECODE_PERFORMANCE_ANALYSIS == 1
+                pa->SectionStart("FindTask");
+#endif
                 currTask = FindNextDecoderTask();
+#if VIDEO_DECODE_PERFORMANCE_ANALYSIS == 1
+                pa->SectionEnd();
+#endif
                 if (currTask)
                 {
                     currTask->decodeStarted = true;
@@ -1914,16 +1960,44 @@ private:
                 if ((oldTask && (oldTask->cancel || oldTask->isFileEnd)) || (currTask && currTask->demuxSeeked))
                 {
                     m_logger->Log(DEBUG) << ">>>--->>> Sending NULL ptr to video decoder <<<---<<<" << endl;
+#if VIDEO_DECODE_PERFORMANCE_ANALYSIS == 1
+                    pa->SectionStart("send_packet");
+#endif
                     avcodec_send_packet(m_viddecCtx, nullptr);
+#if VIDEO_DECODE_PERFORMANCE_ANALYSIS == 1
+                    pa->SectionEnd();
+#endif
                     sentNullPacket = true;
                 }
             }
 
             if (needResetDecoder)
             {
+#if VIDEO_DECODE_PERFORMANCE_ANALYSIS == 1
+                pa->SectionStart("flush_buffers");
+#endif
                 avcodec_flush_buffers(m_viddecCtx);
+#if VIDEO_DECODE_PERFORMANCE_ANALYSIS == 1
+                pa->SectionEnd();
+#endif
                 needResetDecoder = false;
                 sentNullPacket = false;
+                prevOutputPts = INT64_MIN;
+            }
+
+            int64_t decfrmPtsBarrier = CvtVidMtsToPts(m_cacheWnd.readPos*1000)+m_forwardPredecFrameCnt*m_vidfrmIntvPts;
+            if (prevOutputPts >= decfrmPtsBarrier)
+            {
+#if VIDEO_DECODE_PERFORMANCE_ANALYSIS == 1
+                pa->EnterSleep();
+#endif
+                this_thread::sleep_for(chrono::milliseconds(5));
+#if VIDEO_DECODE_PERFORMANCE_ANALYSIS == 1
+                pa->QuitSleep();
+#endif
+                // m_logger->Log(DEBUG) << "------> PAUSE decoding due to pre-decode frame cnt! prevOutputPts=" << prevOutputPts << "(" << MillisecToString(CvtVidPtsToMts(prevOutputPts))
+                //         << "), decfrmPtsBarrier=" << decfrmPtsBarrier << "(" << MillisecToString(CvtVidPtsToMts(decfrmPtsBarrier)) << ")" << endl;
+                continue;
             }
 
             // retrieve output frame
@@ -1931,12 +2005,22 @@ private:
             do{
                 if (!avfrmLoaded)
                 {
+#if VIDEO_DECODE_PERFORMANCE_ANALYSIS == 1
+                    pa->SectionStart("receive_frame");
+#endif
                     int fferr = avcodec_receive_frame(m_viddecCtx, &avfrm);
+#if VIDEO_DECODE_PERFORMANCE_ANALYSIS == 1
+                    pa->SectionEnd();
+#endif
                     if (fferr == 0)
                     {
                         // m_logger->Log(DEBUG) << "<<< Get video frame pts=" << avfrm.pts << "(" << MillisecToString(CvtPtsToMts(avfrm.pts)) << ")." << endl;
+#if VIDEO_DECODE_PERFORMANCE_ANALYSIS == 1
+                        frameTps.push_back(SysClock::now());
+#endif
                         avfrmLoaded = true;
                         idleLoop = false;
+                        prevOutputPts = avfrm.pts;
                     }
                     else if (fferr != AVERROR(EAGAIN))
                     {
@@ -1962,15 +2046,27 @@ private:
                 {
                     if (m_pendingVidfrmCnt < m_maxPendingVidfrmCnt)
                     {
+#if VIDEO_DECODE_PERFORMANCE_ANALYSIS == 1
+                        pa->SectionStart("EnqueueSnapshot");
+#endif
                         EnqueueSnapshotAVFrame(&avfrm);
                         av_frame_unref(&avfrm);
                         avfrmLoaded = false;
                         idleLoop = false;
+#if VIDEO_DECODE_PERFORMANCE_ANALYSIS == 1
+                        pa->SectionEnd();
+#endif
                     }
                     else
                     {
+#if VIDEO_DECODE_PERFORMANCE_ANALYSIS == 1
+                        pa->EnterSleep();
+#endif
                         this_thread::sleep_for(chrono::milliseconds(5));
                     }
+#if VIDEO_DECODE_PERFORMANCE_ANALYSIS == 1
+                        pa->QuitSleep();
+#endif
                 }
             } while (hasOutput && !m_quitThread && (!currTask || !currTask->cancel));
             if (quitLoop)
@@ -1984,7 +2080,13 @@ private:
                 if (!currTask->avpktQ.empty())
                 {
                     AVPacket* avpkt = currTask->avpktQ.front();
+#if VIDEO_DECODE_PERFORMANCE_ANALYSIS == 1
+                    pa->SectionStart("send_packet");
+#endif
                     int fferr = avcodec_send_packet(m_viddecCtx, avpkt);
+#if VIDEO_DECODE_PERFORMANCE_ANALYSIS == 1
+                    pa->SectionEnd();
+#endif
                     if (fferr == 0)
                     {
                         // m_logger->Log(DEBUG) << ">>> Send video packet pts=" << avpkt->pts << "(" << MillisecToString(CvtPtsToMts(avpkt->pts)) << ")." << endl;
@@ -2022,8 +2124,19 @@ private:
             }
 
             if (idleLoop)
+            {
+#if VIDEO_DECODE_PERFORMANCE_ANALYSIS == 1
+                pa->EnterSleep();
+#endif
                 this_thread::sleep_for(chrono::milliseconds(5));
+#if VIDEO_DECODE_PERFORMANCE_ANALYSIS == 1
+                pa->QuitSleep();
+#endif
+            }
         }
+#if VIDEO_DECODE_PERFORMANCE_ANALYSIS == 1
+        pa->End();
+#endif
         if (currTask && !currTask->decInputEof)
             currTask->decInputEof = true;
         if (avfrmLoaded)
@@ -2031,7 +2144,7 @@ private:
         m_logger->Log(DEBUG) << "Leave VideoDecodeThreadProc()." << endl;
     }
 
-    GopDecodeTaskHolder FindNextCfUpdateTask()
+    GopDecodeTaskHolder FindNextVidfrmConversionTask()
     {
         lock_guard<mutex> lk(m_bldtskByPriLock);
         GopDecodeTaskHolder nxttsk = nullptr;
@@ -2053,14 +2166,45 @@ private:
         if (m_quitThread)
             return;
 
+#if VIDEO_FRAME_CONVERSION_PERFORMANCE_ANALYSIS == 1
+        list<TimePoint> frameTps;
+        PerformanceAnalyzer::Holder pa = PerformanceAnalyzer::CreateInstance("VidfrmConversion");
+        pa->SetLogInterval(2000);
+        pa->Start();
+#endif
         GopDecodeTaskHolder currTask;
         while (!m_quitThread)
         {
+#if VIDEO_FRAME_CONVERSION_PERFORMANCE_ANALYSIS == 1
+            auto span = pa->LogOnInterval(DEBUG, m_logger);
+            if (span.first.time_since_epoch().count() > 0)
+            {
+                int decfrmCnt = 0;
+                auto iter = frameTps.begin();
+                while (iter != frameTps.end())
+                {
+                    if (*iter < span.first)
+                        iter = frameTps.erase(iter);
+                    else
+                    {
+                        iter++;
+                        decfrmCnt++;
+                    }
+                }
+                m_logger->Log(DEBUG) << "-->> Converted frames: " << decfrmCnt << ", fps=" << (double)decfrmCnt/chrono::duration_cast<chrono::duration<double>>(span.second-span.first).count() << endl << endl;
+            }
+#endif
             bool idleLoop = true;
 
             if (!currTask || currTask->cancel || currTask->frmCnt <= 0)
             {
-                currTask = FindNextCfUpdateTask();
+#if VIDEO_FRAME_CONVERSION_PERFORMANCE_ANALYSIS == 1
+                pa->SectionStart("FindTask");
+#endif
+                currTask = FindNextVidfrmConversionTask();
+#if VIDEO_FRAME_CONVERSION_PERFORMANCE_ANALYSIS == 1
+                pa->SectionEnd();
+#endif
             }
 
             if (currTask)
@@ -2069,8 +2213,18 @@ private:
                 {
                     if (vf.decfrm)
                     {
+#if VIDEO_FRAME_CONVERSION_PERFORMANCE_ANALYSIS == 1
+                        pa->SectionStart("ConvertImage");
+                        // AddCheckPoint("ConvImg0");
+#endif
                         if (!m_frmCvt.ConvertImage(vf.decfrm.get(), vf.vmat, vf.ts))
                             m_logger->Log(Error) << "FAILED to convert AVFrame to ImGui::ImMat for '" << m_hParser->GetUrl() << "' @pos " << vf.ts << "sec! Error is '" << m_frmCvt.GetError() << "'." << endl;
+#if VIDEO_FRAME_CONVERSION_PERFORMANCE_ANALYSIS == 1
+                        // AddCheckPoint("ConvImg1");
+                        // LogCheckPointsTimeInfo(m_logger, DEBUG);
+                        pa->SectionEnd();
+                        frameTps.push_back(SysClock::now());
+#endif
                         vf.decfrm = nullptr;
                         currTask->frmCnt--;
                         if (currTask->frmCnt < 0)
@@ -2086,8 +2240,19 @@ private:
             }
 
             if (idleLoop)
+            {
+#if VIDEO_FRAME_CONVERSION_PERFORMANCE_ANALYSIS == 1
+                pa->EnterSleep();
+#endif
                 this_thread::sleep_for(chrono::milliseconds(5));
+#if VIDEO_FRAME_CONVERSION_PERFORMANCE_ANALYSIS == 1
+                pa->QuitSleep();
+#endif
+            }
         }
+#if VIDEO_FRAME_CONVERSION_PERFORMANCE_ANALYSIS == 1
+        pa->End();
+#endif
         m_logger->Log(DEBUG) << "Leave GenerateVideoFrameThreadProc()." << endl;
     }
 
@@ -2298,7 +2463,7 @@ private:
 
             if (!currTask || currTask->cancel || currTask->frmCnt <= 0)
             {
-                currTask = FindNextCfUpdateTask();
+                currTask = FindNextVidfrmConversionTask();
             }
 
             if (currTask)
@@ -3162,6 +3327,44 @@ private:
         m_prepared = false;
     }
 
+    void PrintVideoTaskStatus()
+    {
+        m_logger->Log(VERBOSE) << ">>>>>>> Video task status:" << endl;
+        for (auto task : m_bldtskTimeOrder)
+        {
+            m_logger->Log(VERBOSE) << "\t[" << task->seekPts.first << "(" << MillisecToString(CvtVidPtsToMts(task->seekPts.first)) << "), "
+                    << task->seekPts.second << "(" << MillisecToString(CvtVidPtsToMts(task->seekPts.second)) << ")) : "
+                    << (task->demuxStopped ? "demuxStopped" : (task->demuxStarted ? "demuxStarted" : "demuxNOTstarted")) << "|"
+                    << (task->decodeStopped ? "decodeStopped" : (task->decodeStarted ? "decodeStarted" : "decodeNOTstarted"));
+            if (task->cancel)
+                m_logger->Log(VERBOSE) << "|CANNCELLED";
+            if (task->isFileBegin)
+                m_logger->Log(VERBOSE) << "|FileBegin";
+            if (task->isFileEnd)
+                m_logger->Log(VERBOSE) << "|FileEnd";
+            m_logger->Log(VERBOSE) << endl;
+            m_logger->Log(VERBOSE) << "\t\tfrmCnt=" << task->frmCnt;
+            int decfrmCnt = 0;
+            int matCnt = 0;
+            auto iter = task->vfAry.begin();
+            while (iter != task->vfAry.end())
+            {
+                if (!iter->vmat.empty())
+                {
+                    matCnt++;
+                    decfrmCnt++;
+                }
+                else if (iter->decfrm)
+                {
+                    decfrmCnt++;
+                }
+                iter++;
+            }
+            m_logger->Log(VERBOSE) << ", decfrmCnt=" << decfrmCnt << ", matCnt=" << matCnt << endl;
+        }
+        m_logger->Log(VERBOSE) << "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<" << endl;
+    }
+
 private:
     static atomic_uint32_t s_idCounter;
     uint32_t m_id;
@@ -3224,8 +3427,7 @@ private:
     // release resource thread
     thread m_releaseThread;
 
-    double m_prevReadPos{0};
-    ImGui::ImMat m_prevReadImg;
+    pair<double, ImGui::ImMat> m_prevReadResult{0, ImGui::ImMat()};
     bool m_readForward{true};
     bool m_seekPosUpdated{false};
     double m_seekPosTs{0};
@@ -3240,6 +3442,7 @@ private:
     int32_t m_maxPendingVidfrmCnt{2};
     double m_forwardCacheDur{1.5};
     double m_backwardCacheDur{0.5};
+    double m_forwardPredecFrameCnt{3};
     CacheWindow m_cacheWnd;
     CacheWindow m_bldtskSnapWnd;
     bool m_needUpdateBldtsk{false};

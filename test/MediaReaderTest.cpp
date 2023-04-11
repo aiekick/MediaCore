@@ -15,6 +15,7 @@
 #include "AudioRender.h"
 #include "FFUtils.h"
 #include "Logger.h"
+#include "DebugHelper.h"
 
 using namespace std;
 using namespace MediaCore;
@@ -93,7 +94,7 @@ static void MediaReader_Initialize(void** handle)
     GetDefaultLogger()
         ->SetShowLevels(DEBUG);
     MediaParser::GetLogger()
-        ->SetShowLevels(DEBUG);
+        ->SetShowLevels(INFO);
     MediaReader::GetLogger()
         ->SetShowLevels(DEBUG);
 
@@ -338,17 +339,24 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
                     imgTag += "(bad format)";
                 }
                 if (imgValid)
+                {
+                    // AddCheckPoint("MatToTexture0");
                     ImGui::ImMatToTexture(vmat, g_imageTid);
+                    // AddCheckPoint("MatToTexture1");
+                }
             }
             else
             {
                 Log(Error) << "FAILED to read video frame: " << g_vidrdr->GetError() << endl;
             }
         }
+        // AddCheckPoint("ShowImage0");
         if (g_imageTid)
             ImGui::Image(g_imageTid, g_imageDisplaySize);
         else
             ImGui::Dummy(g_imageDisplaySize);
+        // AddCheckPoint("ShowImage1");
+        // LogCheckPointsTimeInfo();
         ImGui::TextUnformatted(imgTag.c_str());
 
         ImGui::Spacing();
@@ -371,6 +379,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
                     g_vidrdr->EnableHwAccel(g_useHwAccel);
                     g_vidrdr->Open(g_mediaParser);
                     g_vidrdr->ConfigVideoReader((uint32_t)g_imageDisplaySize.x, (uint32_t)g_imageDisplaySize.y);
+                    // g_vidrdr->ConfigVideoReader(1.0f, 1.0f);
                     g_vidrdr->Start();
                 }
                 if (g_mediaParser->HasAudio() && !g_videoOnly)
