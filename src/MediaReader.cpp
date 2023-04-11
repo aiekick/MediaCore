@@ -42,8 +42,8 @@ extern "C"
 }
 #include "DebugHelper.h"
 
-#define VIDEO_DECODE_PERFORMANCE_ANALYSIS 1
-#define VIDEO_FRAME_CONVERSION_PERFORMANCE_ANALYSIS 1
+#define VIDEO_DECODE_PERFORMANCE_ANALYSIS 0
+#define VIDEO_FRAME_CONVERSION_PERFORMANCE_ANALYSIS 0
 
 using namespace std;
 using namespace Logger;
@@ -1196,9 +1196,9 @@ private:
             m_viddecThread = thread(&MediaReader_Impl::VideoDecodeThreadProc, this);
             thnOss.str(""); thnOss << "VrdrVdc-" << fileName;
             SysUtils::SetThreadName(m_viddecThread, thnOss.str());
-            m_genVfThread = thread(&MediaReader_Impl::GenerateVideoFrameThreadProc, this);
-            thnOss.str(""); thnOss << "VrdrGvf-" << fileName;
-            SysUtils::SetThreadName(m_genVfThread, thnOss.str());
+            m_updateVfThread = thread(&MediaReader_Impl::UpdateVideoFrameThreadProc, this);
+            thnOss.str(""); thnOss << "VrdrUvf-" << fileName;
+            SysUtils::SetThreadName(m_updateVfThread, thnOss.str());
         }
         else
         {
@@ -1235,10 +1235,10 @@ private:
             m_viddecThread.join();
             m_viddecThread = thread();
         }
-        if (m_genVfThread.joinable())
+        if (m_updateVfThread.joinable())
         {
-            m_genVfThread.join();
-            m_genVfThread = thread();
+            m_updateVfThread.join();
+            m_updateVfThread = thread();
         }
         if (m_auddecThread.joinable())
         {
@@ -2157,9 +2157,9 @@ private:
         return nxttsk;
     }
 
-    void GenerateVideoFrameThreadProc()
+    void UpdateVideoFrameThreadProc()
     {
-        m_logger->Log(DEBUG) << "Enter GenerateVideoFrameThreadProc()..." << endl;
+        m_logger->Log(DEBUG) << "Enter UpdateVideoFrameThreadProc()..." << endl;
 
         while (!m_prepared && !m_quitThread)
             this_thread::sleep_for(chrono::milliseconds(5));
@@ -2239,6 +2239,8 @@ private:
                 }
             }
 
+            int64_t releaseFrmPts = CvtVidMtsToPts(m_cacheWnd.readPos*1000)-m_backwardPresvFrameCnt*m_vidfrmIntvPts;
+
             if (idleLoop)
             {
 #if VIDEO_FRAME_CONVERSION_PERFORMANCE_ANALYSIS == 1
@@ -2253,7 +2255,7 @@ private:
 #if VIDEO_FRAME_CONVERSION_PERFORMANCE_ANALYSIS == 1
         pa->End();
 #endif
-        m_logger->Log(DEBUG) << "Leave GenerateVideoFrameThreadProc()." << endl;
+        m_logger->Log(DEBUG) << "Leave UpdateVideoFrameThreadProc()." << endl;
     }
 
     bool EnqueueAudioAVFrame(AVFrame* frm)
@@ -3419,7 +3421,7 @@ private:
     // video decoding thread
     thread m_viddecThread;
     // update snapshots thread
-    thread m_genVfThread;
+    thread m_updateVfThread;
     // audio decoding thread
     thread m_auddecThread;
     // swr thread
@@ -3443,6 +3445,7 @@ private:
     double m_forwardCacheDur{1.5};
     double m_backwardCacheDur{0.5};
     double m_forwardPredecFrameCnt{3};
+    double m_backwardPresvFrameCnt{1};
     CacheWindow m_cacheWnd;
     CacheWindow m_bldtskSnapWnd;
     bool m_needUpdateBldtsk{false};
