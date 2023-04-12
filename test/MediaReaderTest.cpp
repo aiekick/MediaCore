@@ -115,7 +115,7 @@ static void MediaReader_Initialize(void** handle)
 
     // g_vidrdr = MediaReader::CreateInstance();
     g_vidrdr = MediaReader::CreateVideoInstance();
-    g_vidrdr->SetLogLevel(VERBOSE);
+    g_vidrdr->SetLogLevel(INFO);
     g_audrdr = MediaReader::CreateInstance();
     g_audrdr->SetLogLevel(INFO);
 
@@ -325,7 +325,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
             ImGui::ImMat vmat;
             if (g_vidrdr->ReadVideoFrame(playPos, vmat, eof))
             {
-                Log(DEBUG) << "Succeeded to read video frame @pos=" << playPos << "." << endl;
+                Log(VERBOSE) << "Succeeded to read video frame @pos=" << playPos << "." << endl;
                 imgTag = TimestampToString(vmat.time_stamp);
                 bool imgValid = true;
                 if (vmat.empty())
