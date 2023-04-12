@@ -57,7 +57,6 @@ public:
 
     MediaReader_Impl(const string& loggerName = "")
     {
-        m_id = s_idCounter++;
         if (loggerName.empty())
         {
             m_logger = MediaReader::GetLogger();
@@ -768,11 +767,6 @@ public:
         return ret;
     }
 
-    uint32_t Id() const override
-    {
-        return m_id;
-    }
-
     bool IsOpened() const override
     {
         return m_opened;
@@ -903,6 +897,11 @@ public:
     void EnableHwAccel(bool enable) override
     {
         m_vidPreferUseHw = enable;
+    }
+
+    void SetLogLevel(Logger::Level l) override
+    {
+        m_logger->SetShowLevels(l);
     }
 
     string GetError() const override
@@ -3368,8 +3367,6 @@ private:
     }
 
 private:
-    static atomic_uint32_t s_idCounter;
-    uint32_t m_id;
     ALogger* m_logger;
     string m_errMsg;
 
@@ -3467,9 +3464,7 @@ private:
     FILE* m_fpPcmFile{NULL};
 };
 
-atomic_uint32_t MediaReader_Impl::s_idCounter{1};
-
-static const auto MEDIA_READER_HOLDER_DELETER = [] (MediaReader* p) {
+static const auto VIDEO_READER_HOLDER_DELETER = [] (MediaReader* p) {
     MediaReader_Impl* ptr = dynamic_cast<MediaReader_Impl*>(p);
     ptr->Close();
     delete ptr;
@@ -3477,7 +3472,7 @@ static const auto MEDIA_READER_HOLDER_DELETER = [] (MediaReader* p) {
 
 MediaReader::Holder MediaReader::CreateInstance(const string& loggerName)
 {
-    return MediaReader::Holder(new MediaReader_Impl(loggerName), MEDIA_READER_HOLDER_DELETER);
+    return MediaReader::Holder(new MediaReader_Impl(loggerName), VIDEO_READER_HOLDER_DELETER);
 }
 
 ALogger* MediaReader::GetLogger()

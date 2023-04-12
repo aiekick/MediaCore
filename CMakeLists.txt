@@ -102,6 +102,7 @@ add_library(MediaCore ${LIBRARY}
     ${LIB_SRC_DIR}/SysUtils.cpp
     ${LIB_SRC_DIR}/VideoBlender.cpp
     ${LIB_SRC_DIR}/VideoClip.cpp
+    ${LIB_SRC_DIR}/VideoReader.cpp
     ${LIB_SRC_DIR}/VideoTrack.cpp
     ${LIB_SRC_DIR}/VideoTransformFilter_FFImpl.cpp
     ${LIB_SRC_DIR}/VideoTransformFilter_VulkanImpl.cpp

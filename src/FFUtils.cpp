@@ -358,37 +358,62 @@ static AVColorRange ConvertImColorRangeToAVColorRange(ImColorRange imclrrng)
     return clrrng;
 }
 
+static const auto _AVFRAME_SHDPTR_DELETER = [] (AVFrame* p) {
+    if (p)
+        av_frame_free(&p);
+};
+
 SelfFreeAVFramePtr AllocSelfFreeAVFramePtr()
 {
-    SelfFreeAVFramePtr frm = shared_ptr<AVFrame>(av_frame_alloc(), [](AVFrame* avfrm) {
-        if (avfrm)
-            av_frame_free(&avfrm);
-    });
-    if (!frm.get())
+    SelfFreeAVFramePtr ptr = shared_ptr<AVFrame>(av_frame_alloc(), _AVFRAME_SHDPTR_DELETER);
+    if (!ptr.get())
         return nullptr;
-    return frm;
+    return ptr;
 }
 
 SelfFreeAVFramePtr CloneSelfFreeAVFramePtr(const AVFrame* avfrm)
 {
-    SelfFreeAVFramePtr frm = shared_ptr<AVFrame>(av_frame_clone(avfrm), [](AVFrame* avfrm) {
-        if (avfrm)
-            av_frame_free(&avfrm);
-    });
-    if (!frm.get())
+    SelfFreeAVFramePtr ptr = shared_ptr<AVFrame>(av_frame_clone(avfrm), _AVFRAME_SHDPTR_DELETER);
+    if (!ptr.get())
         return nullptr;
-    return frm;
+    return ptr;
 }
 
 SelfFreeAVFramePtr WrapSelfFreeAVFramePtr(AVFrame* avfrm)
 {
-    SelfFreeAVFramePtr frm = shared_ptr<AVFrame>(avfrm, [](AVFrame* avfrm) {
-        if (avfrm)
-            av_frame_free(&avfrm);
-    });
-    if (!frm.get())
+    SelfFreeAVFramePtr ptr = shared_ptr<AVFrame>(avfrm, _AVFRAME_SHDPTR_DELETER);
+    if (!ptr.get())
         return nullptr;
-    return frm;
+    return ptr;
+}
+
+static const auto _AVPACKET_SHDPTR_DELETER = [] (AVPacket* p) {
+    if (p)
+        av_packet_free(&p);
+};
+
+SelfFreeAVPacketPtr AllocSelfFreeAVPacketPtr()
+{
+    SelfFreeAVPacketPtr ptr = shared_ptr<AVPacket>(av_packet_alloc(), _AVPACKET_SHDPTR_DELETER);
+    if (!ptr.get())
+        return nullptr;
+    return ptr;
+}
+
+SelfFreeAVPacketPtr CloneSelfFreeAVPacketPtr(const AVPacket* avpkt)
+{
+    SelfFreeAVPacketPtr ptr = shared_ptr<AVPacket>(av_packet_clone(avpkt), _AVPACKET_SHDPTR_DELETER);
+    if (!ptr.get())
+        return nullptr;
+    return ptr;
+}
+
+SelfFreeAVPacketPtr WrapSelfFreeAVPacketPtr(AVPacket* avpkt)
+{
+    SelfFreeAVPacketPtr ptr = shared_ptr<AVPacket>(avpkt, _AVPACKET_SHDPTR_DELETER);
+    if (!ptr.get())
+        return nullptr;
+    return ptr;
 }
 
 bool IsHwFrame(const AVFrame* avfrm)
@@ -425,7 +450,7 @@ bool HwFrameToSwFrame(AVFrame* swfrm, const AVFrame* hwfrm)
     fferr = av_hwframe_transfer_data(swfrm, hwfrm, 0);
     if (fferr < 0)
     {
-        Log(Error) << "av_hwframe_map and av_hwframe_transfer_data() FAILED! fferr=" << fferr << "." << endl;
+        Log(Error) << "av_hwframe_transfer_data() FAILED! fferr=" << fferr << "." << endl;
         return false;
     }
 #endif

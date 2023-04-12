@@ -60,6 +60,10 @@ using SelfFreeAVFramePtr = std::shared_ptr<AVFrame>;
 MEDIACORE_API SelfFreeAVFramePtr AllocSelfFreeAVFramePtr();
 MEDIACORE_API SelfFreeAVFramePtr CloneSelfFreeAVFramePtr(const AVFrame* avfrm);
 MEDIACORE_API SelfFreeAVFramePtr WrapSelfFreeAVFramePtr(AVFrame* avfrm);
+using SelfFreeAVPacketPtr = std::shared_ptr<AVPacket>;
+MEDIACORE_API SelfFreeAVPacketPtr AllocSelfFreeAVPacketPtr();
+MEDIACORE_API SelfFreeAVPacketPtr CloneSelfFreeAVPacketPtr(const AVPacket* avpkt);
+MEDIACORE_API SelfFreeAVPacketPtr WrapSelfFreeAVPacketPtr(AVPacket* avpkt);
 
 MEDIACORE_API AVPixelFormat GetAVPixelFormatByName(const std::string& name);
 MEDIACORE_API ImColorFormat ConvertPixelFormatToColorFormat(AVPixelFormat pixfmt);

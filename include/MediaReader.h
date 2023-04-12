@@ -31,6 +31,7 @@ struct MediaReader
 {
     using Holder = std::shared_ptr<MediaReader>;
     static MEDIACORE_API Holder CreateInstance(const std::string& loggerName = "");
+    static MEDIACORE_API Holder CreateVideoInstance(const std::string& loggerName = "");
     static MEDIACORE_API Logger::ALogger* GetLogger();
 
     virtual bool Open(const std::string& url) = 0;
@@ -54,7 +55,6 @@ struct MediaReader
     virtual bool ReadAudioSamples(uint8_t* buf, uint32_t& size, double& pos, bool& eof, bool wait = true) = 0;
     virtual bool ReadAudioSamples(ImGui::ImMat& m, uint32_t readSamples, bool& eof, bool wait = true) = 0;
 
-    virtual uint32_t Id() const = 0;
     virtual bool IsOpened() const = 0;
     virtual bool IsStarted() const = 0;
     virtual MediaParser::Holder GetMediaParser() const = 0;
@@ -65,6 +65,8 @@ struct MediaReader
 
     virtual bool SetCacheDuration(double forwardDur, double backwardDur) = 0;
     virtual std::pair<double, double> GetCacheDuration() const = 0;
+    virtual bool IsHwAccelEnabled() const = 0;
+    virtual void EnableHwAccel(bool enable) = 0;
 
     virtual MediaInfo::Holder GetMediaInfo() const = 0;
     virtual const VideoStream* GetVideoStream() const = 0;
@@ -76,8 +78,7 @@ struct MediaReader
     virtual uint32_t GetAudioOutSampleRate() const = 0;
     virtual uint32_t GetAudioOutFrameSize() const = 0;
 
-    virtual bool IsHwAccelEnabled() const = 0;
-    virtual void EnableHwAccel(bool enable) = 0;
+    virtual void SetLogLevel(Logger::Level l) = 0;
     virtual std::string GetError() const = 0;
 };
 }

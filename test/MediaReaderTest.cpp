@@ -96,7 +96,7 @@ static void MediaReader_Initialize(void** handle)
     MediaParser::GetLogger()
         ->SetShowLevels(INFO);
     MediaReader::GetLogger()
-        ->SetShowLevels(DEBUG);
+        ->SetShowLevels(INFO);
 
 #ifdef USE_BOOKMARK
 	// load bookmarks
@@ -113,8 +113,11 @@ static void MediaReader_Initialize(void** handle)
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = c_imguiIniPath.c_str();
 
-    g_vidrdr = MediaReader::CreateInstance();
+    // g_vidrdr = MediaReader::CreateInstance();
+    g_vidrdr = MediaReader::CreateVideoInstance();
+    g_vidrdr->SetLogLevel(VERBOSE);
     g_audrdr = MediaReader::CreateInstance();
+    g_audrdr->SetLogLevel(INFO);
 
     g_pcmStream = new SimplePcmStream(g_audrdr);
     g_audrnd = AudioRender::CreateInstance();
@@ -322,6 +325,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
             ImGui::ImMat vmat;
             if (g_vidrdr->ReadVideoFrame(playPos, vmat, eof))
             {
+                Log(DEBUG) << "Succeeded to read video frame @pos=" << playPos << "." << endl;
                 imgTag = TimestampToString(vmat.time_stamp);
                 bool imgValid = true;
                 if (vmat.empty())
@@ -347,7 +351,7 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
             }
             else
             {
-                Log(Error) << "FAILED to read video frame: " << g_vidrdr->GetError() << endl;
+                Log(Error) << "FAILED to read video frame @pos=" << playPos << ": " << g_vidrdr->GetError() << endl;
             }
         }
         // AddCheckPoint("ShowImage0");
@@ -378,8 +382,10 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
                 {
                     g_vidrdr->EnableHwAccel(g_useHwAccel);
                     g_vidrdr->Open(g_mediaParser);
-                    g_vidrdr->ConfigVideoReader((uint32_t)g_imageDisplaySize.x, (uint32_t)g_imageDisplaySize.y);
-                    // g_vidrdr->ConfigVideoReader(1.0f, 1.0f);
+                    // g_vidrdr->ConfigVideoReader((uint32_t)g_imageDisplaySize.x, (uint32_t)g_imageDisplaySize.y);
+                    g_vidrdr->ConfigVideoReader(1.0f, 1.0f);
+                    if (playPos > 0)
+                        g_vidrdr->SeekTo(playPos);
                     g_vidrdr->Start();
                 }
                 if (g_mediaParser->HasAudio() && !g_videoOnly)
@@ -393,10 +399,13 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
                     }
                     g_chooseAudioIndex = 0;
                     g_audrdr->ConfigAudioReader(c_audioRenderChannels, c_audioRenderSampleRate, "flt", g_chooseAudioIndex);
+                    if (playPos > 0)
+                        g_audrdr->SeekTo(playPos);
                     g_audrdr->Start();
                 }
                 if (!g_vidrdr->IsOpened() && !g_audrdr->IsOpened())
                     Log(Error) << "Neither VIDEO nor AUDIO stream is ready for playback!" << endl;
+                g_playStartTp = Clock::now();
                 g_isOpening = false;
             }
         }
@@ -413,6 +422,9 @@ static bool MediaReader_Frame(void * handle, bool app_will_quit)
 		{
             g_vidrdr->Close();
             g_audrdr->Close();
+            g_audrnd->Flush();
+            g_audPos = 0;
+            g_playStartPos = 0;
             g_audioStreamCount = 0;
             g_chooseAudioIndex = -1;
             if (g_imageTid)
