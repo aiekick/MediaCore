@@ -1076,7 +1076,11 @@ private:
                     });
                     m_pendingVidfrmCnt++;
                     const int64_t pts = prevFrmPts = pAvfrm->pts;
+#if LIBAVUTIL_VERSION_MAJOR > 56
                     const int64_t dur = pAvfrm->duration;
+#else
+                    const int64_t dur = pAvfrm->pkt_duration;
+#endif
                     pAvfrm = nullptr;
                     VideoFrame::Holder hVfrm(new VideoFrame({frmPtr, ImGui::ImMat(), (double)CvtPtsToMts(pts)/1000, pts, dur}));
                     lock_guard<mutex> _lk(m_vfrmQLock);
