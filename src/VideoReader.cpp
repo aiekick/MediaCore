@@ -1160,7 +1160,7 @@ private:
                     });
                     m_pendingVidfrmCnt++;
                     const int64_t pts = pAvfrm->pts;
-#if LIBAVUTIL_VERSION_MAJOR > 56
+#if LIBAVUTIL_VERSION_MAJOR > 56 || (LIBAVUTIL_VERSION_MAJOR == 56 && LIBAVUTIL_VERSION_MINOR > 29)
                     const int64_t dur = pAvfrm->duration;
 #else
                     const int64_t dur = pAvfrm->pkt_duration;
