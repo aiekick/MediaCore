@@ -45,13 +45,18 @@ public:
         int64_t start, int64_t startOffset, int64_t endOffset, int64_t readpos, bool forward)
         : m_id(id), m_start(start)
     {
+        string fileName = SysUtils::ExtractFileName(hParser->GetUrl());
+        ostringstream loggerNameOss;
+        loggerNameOss << "VClip-" << fileName.substr(0, 8);
+
+        m_logger = GetLogger(loggerNameOss.str());
         m_hInfo = hParser->GetMediaInfo();
         if (hParser->GetBestVideoStreamIndex() < 0)
             throw invalid_argument("Argument 'hParser' has NO VIDEO stream!");
         auto vidStm = hParser->GetBestVideoStream();
         if (vidStm->isImage)
             throw invalid_argument("This video stream is an IMAGE, it should be instantiated with a 'VideoClip_ImageImpl' instance!");
-        m_hReader = MediaReader::CreateInstance();
+        m_hReader = MediaReader::CreateVideoInstance();
         m_hReader->EnableHwAccel(VideoClip::USE_HWACCEL);
         if (!m_hReader->Open(hParser))
             throw runtime_error(m_hReader->GetError());
@@ -220,8 +225,12 @@ public:
         ImGui::ImMat image;
         // string filename = SysUtils::ExtractFileBaseName(m_hInfo->url);
         // AddCheckPoint(filename+", t0");
-        if (!m_hReader->ReadVideoFrame((double)(pos+m_startOffset)/1000, image, eof))
-            throw runtime_error(m_hReader->GetError());
+        const double readPosTs = (double)(pos+m_startOffset)/1000;
+        if (!m_hReader->ReadVideoFrame(readPosTs, image, eof))
+        {
+            m_logger->Log(WARN) << "FAILED to read frame @ timeline-pos=" << pos << "ms, media-time=" << readPosTs << "s! Error is '" << m_hReader->GetError() << "'." << endl;
+            return;
+        }
         // AddCheckPoint(filename+", t1");
         // LogCheckPointsTimeInfo();
         frames.push_back({CorrelativeFrame::PHASE_SOURCE_FRAME, m_id, m_trackId, image});
@@ -295,6 +304,7 @@ public:
     }
 
 private:
+    ALogger* m_logger;
     int64_t m_id;
     int64_t m_trackId{-1};
     MediaInfo::Holder m_hInfo;
@@ -615,6 +625,9 @@ public:
     VideoOverlap_Impl(int64_t id, VideoClip::Holder hClip1, VideoClip::Holder hClip2)
         : m_id(id), m_hFrontClip(hClip1), m_hRearClip(hClip2), m_hTrans(new DefaultVideoTransition_Impl())
     {
+        ostringstream loggerNameOss;
+        loggerNameOss << "VOvlp#" << id;
+        m_logger = GetLogger(loggerNameOss.str());
         Update();
         m_hTrans->ApplyTo(this);
     }
@@ -669,13 +682,26 @@ public:
         int64_t pos2 = pos+(Start()-m_hRearClip->Start());
         m_hRearClip->ReadVideoFrame(pos2, frames, vmat2, eof2);
 
-        auto hTrans = m_hTrans;
-        out = hTrans->MixTwoImages(vmat1, vmat2, pos+m_start, Duration());
-        frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSITION, m_hFrontClip->Id(), m_hFrontClip->TrackId(), out});
-
         eof = eof1 || eof2;
         if (pos == Duration())
             eof = true;
+
+        if (vmat1.empty())
+        {
+            m_logger->Log(WARN) << "'vmat1' is EMPTY!" << endl;
+            out = vmat2;
+            return;
+        }
+        if (vmat2.empty())
+        {
+            m_logger->Log(WARN) << "'vmat2' is EMPTY!" << endl;
+            out = vmat1;
+            return;
+        }
+
+        auto hTrans = m_hTrans;
+        out = hTrans->MixTwoImages(vmat1, vmat2, pos+m_start, Duration());
+        frames.push_back({CorrelativeFrame::PHASE_AFTER_TRANSITION, m_hFrontClip->Id(), m_hFrontClip->TrackId(), out});
     }
 
     void SeekTo(int64_t pos) override
@@ -736,6 +762,7 @@ public:
     }
 
 private:
+    ALogger* m_logger;
     int64_t m_id;
     VideoClip::Holder m_hFrontClip;
     VideoClip::Holder m_hRearClip;

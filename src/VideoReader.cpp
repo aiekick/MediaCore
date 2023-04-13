@@ -54,11 +54,11 @@ public:
     VideoReader_Impl(const string& loggerName = "")
     {
         if (loggerName.empty())
-            m_logger = Logger::GetLogger("VReader");
+            m_logger = GetVideoLogger();
         else
             m_logger = Logger::GetLogger(loggerName);
         int n;
-        Level l = MediaReader::GetLogger()->GetShowLevels(n);
+        Level l = GetVideoLogger()->GetShowLevels(n);
         m_logger->SetShowLevels(l, n);
     }
 
@@ -278,7 +278,6 @@ public:
             m_viddecCtx = nullptr;
         }
         m_vidAvStm = nullptr;
-        m_dmxEof = false;
         m_readPos = 0;
         m_prevReadResult.first = 0;
         m_prevReadResult.second.release();
@@ -316,7 +315,6 @@ public:
         m_vidAvStm = nullptr;
         m_hParser = nullptr;
         m_hMediaInfo = nullptr;
-        m_dmxEof = false;
         m_readPos = 0;
         m_prevReadResult.first = 0;
         m_prevReadResult.second.release();
@@ -329,7 +327,6 @@ public:
         m_prepared = false;
         m_started = false;
         m_configured = false;
-        m_streamInfoFound = false;
         m_opened = false;
         m_errMsg = "";
     }
@@ -351,6 +348,9 @@ public:
         lock_guard<mutex> lk(m_seekPosLock);
         m_seekPosTs = ts;
         m_seekPosUpdated = true;
+        m_inSeeking = true;
+        int64_t seekPts = CvtMtsToPts(ts*1000);
+        UpdateReadPos(seekPts);
         return true;
     }
 
@@ -403,6 +403,9 @@ public:
         }
         m_seekPosTs = readPos;
         m_seekPosUpdated = true;
+        m_inSeeking = true;
+        int64_t seekPts = CvtMtsToPts(m_seekPosTs*1000);
+        UpdateReadPos(seekPts);
 
         StartAllThreads();
     }
@@ -483,27 +486,34 @@ public:
                 {
                     if (iter != m_vfrmQ.begin())
                         hVfrm = *(--iter);
-                    else if (pts >= (*iter)->pts && pts <= (*iter)->pts+(*iter)->dur)
-                        hVfrm = *iter;
-                    break;
+                    else
+                    {
+                        auto& vf = *iter;
+                        if (pts >= vf->pts && pts <= vf->pts+vf->dur)
+                            hVfrm = vf;
+                    }
                 }
-                else if (!m_readForward)
+                else if (!m_vfrmQ.empty())
                 {
-                    break;
+                    auto& vf = m_vfrmQ.back();
+                    if (pts >= vf->pts && pts <= vf->pts+vf->dur || vf->isEofFrame)
+                        hVfrm = vf;
                 }
+                if (hVfrm)
+                    break;
             }
             if (!wait)
                 break;
-            this_thread::sleep_for(chrono::milliseconds(5));
+            this_thread::sleep_for(chrono::milliseconds(2));
         }
         if (!hVfrm)
         {
+            m_errMsg = "No suitable frame!";
             return false;
         }
-        if (hVfrm->pts == INT64_MAX)
+        if (m_readForward && hVfrm->isEofFrame)
         {
             eof = true;
-            return true;
         }
 
         if (wait && hVfrm->vmat.empty())
@@ -520,6 +530,7 @@ public:
         }
         if (hVfrm->vmat.empty())
         {
+            m_errMsg = "Mat is NOT READY!";
             return false;
         }
 
@@ -693,6 +704,7 @@ private:
             m_errMsg = oss.str();
             return false;
         }
+        UpdateReadPos(m_vidStartTime);
         return true;
     }
 
@@ -732,15 +744,11 @@ private:
 
         lock_guard<recursive_mutex> lk(m_apiLock, adopt_lock);
         int fferr;
-        if (!m_streamInfoFound)
+        fferr = avformat_find_stream_info(m_avfmtCtx, nullptr);
+        if (fferr < 0)
         {
-            fferr = avformat_find_stream_info(m_avfmtCtx, nullptr);
-            if (fferr < 0)
-            {
-                m_errMsg = FFapiFailureMessage("avformat_find_stream_info", fferr);
-                return false;
-            }
-            m_streamInfoFound = true;
+            m_errMsg = FFapiFailureMessage("avformat_find_stream_info", fferr);
+            return false;
         }
 
         m_vidAvStm = m_avfmtCtx->streams[m_vidStmIdx];
@@ -767,7 +775,6 @@ private:
             return false;
         }
 
-        UpdateReadPos(m_vidStartTime);
         m_prepared = true;
         return true;
     }
@@ -833,6 +840,7 @@ private:
         double ts;
         int64_t pts;
         int64_t dur{0};
+        bool isEofFrame{false};
     };
 
     void UpdateReadPos(int64_t readPts)
@@ -860,6 +868,7 @@ private:
         }
 
         int fferr;
+        bool demuxEof = false;
         bool needSeek = false;
         bool needFlushVfrmQ = false;
         bool afterSeek = false;
@@ -867,13 +876,19 @@ private:
         int64_t lastPktPts = INT64_MIN, minPtsAfterSeek = INT64_MAX;
         int64_t backwardReadLimitPts;
         int64_t seekPts;
+        list<int64_t> ptsList;
+        bool needPtsSafeCheck = true;
+        bool nullPktSent = false;
         while (!m_quitThread)
         {
             bool idleLoop = true;
+
+            // handle read direction change
             bool directionChanged = readForward != m_readForward;
             readForward = m_readForward;
             if (directionChanged)
             {
+                m_logger->Log(VERBOSE) << "            >>>> DIRECTION CHANGE DETECTED <<<<" << endl;
                 UpdateReadPos(m_readPos);
                 needSeek = true;
                 if (readForward)
@@ -910,6 +925,7 @@ private:
                         backwardReadLimitPts = vf->pts > m_readPos ? m_readPos : vf->pts-1;
                     }
                     seekPts = backwardReadLimitPts;
+                    m_logger->Log(VERBOSE) << "          ---[1] backwardReadLimitPts=" << backwardReadLimitPts << endl;
                 }
             }
 
@@ -920,25 +936,33 @@ private:
                 if (m_seekPosUpdated)
                 {
                     seekOpTriggered = true;
-                    m_inSeeking = needSeek = needFlushVfrmQ = true;
+                    // m_inSeeking = needSeek = needFlushVfrmQ = true;
+                    needSeek = needFlushVfrmQ = true;
                     seekPts = CvtMtsToPts(m_seekPosTs*1000);
                     m_seekPosUpdated = false;
                 }
             }
             if (seekOpTriggered)
             {
-                UpdateReadPos(seekPts);
+                // clear avpacket queue
+                {
+                    m_logger->Log(DEBUG) << "--> Flush vpacket Queue." << endl;
+                    lock_guard<mutex> _lk(m_vpktQLock);
+                    m_vpktQ.clear();
+                }
+                if (!m_readForward)
+                {
+                    backwardReadLimitPts = m_cacheRange.second;
+                    m_logger->Log(VERBOSE) << "          ---[2] backwardReadLimitPts=" << backwardReadLimitPts << endl;
+                }
+                needPtsSafeCheck = true;
+                ptsList.clear();
             }
             if (needSeek)
             {
                 needSeek = false;
-                // clear avpacket queue
-                {
-                    lock_guard<mutex> _lk(m_vpktQLock);
-                    m_vpktQ.clear();
-                }
                 // seek to the new position
-                m_logger->Log(DEBUG) << "--> Seek[1]: Demux seek to " << seekPts << "(" << seekPts << ")." << endl;
+                m_logger->Log(DEBUG) << "--> Seek[1]: Demux seek to " << (double)CvtPtsToMts(seekPts)/1000 << "(" << seekPts << ")." << endl;
                 fferr = avformat_seek_file(m_avfmtCtx, m_vidStmIdx, INT64_MIN, seekPts, seekPts, 0);
                 if (fferr < 0)
                 {
@@ -947,7 +971,7 @@ private:
                 }
                 lastPktPts = INT64_MIN;
                 minPtsAfterSeek = INT64_MAX;
-                m_dmxEof = false;
+                demuxEof = false;
                 afterSeek = true;
             }
 
@@ -960,16 +984,58 @@ private:
             else
             {
                 doReadPacket = lastPktPts < backwardReadLimitPts;
-                if (!doReadPacket && minPtsAfterSeek >= m_cacheRange.first && minPtsAfterSeek > m_vidStartTime)
+            }
+            // do pts safe check: ensure we've already got at least 'm_minGreaterPtsCountThanReadPos' packets with pts that are greater than m_readPos
+            if (needPtsSafeCheck)
+            {
+                const int64_t readPos = m_readPos;
+                int cnt = 0;
+                auto iter = ptsList.begin();
+                while (iter != ptsList.end())
+                {
+                    if (*iter < readPos)
+                        iter = ptsList.erase(iter);
+                    else if (*iter == readPos)
+                    {
+                        cnt = m_minGreaterPtsCountThanReadPos;
+                        break;
+                    }
+                    else
+                    {
+                        cnt++;
+                    }
+                    iter++;
+                }
+                if (cnt < m_minGreaterPtsCountThanReadPos) // if greater-than-readpos pts is not enough, force to read more packets
+                    doReadPacket = true;
+                else if (!m_readForward)  // under backward playback state, we only need to do pts-safecheck once per seek op is triggered
+                    needPtsSafeCheck = false;
+            }
+            if (demuxEof) doReadPacket = false;
+            // under backward playback state, we need to pre-read and decode frames before the read-pos
+            if (!m_readForward && !doReadPacket)
+            {
+                if (minPtsAfterSeek >= m_cacheRange.first && minPtsAfterSeek > m_vidStartTime)
                 {
                     seekPts = backwardReadLimitPts = minPtsAfterSeek-1;
                     needSeek = true;
                     idleLoop = false;
+                    m_logger->Log(VERBOSE) << "          --- Backward variables update: backwardReadLimitPts=" << backwardReadLimitPts
+                            << ", lastPktPts=" << lastPktPts << ", minPtsAfterSeek=" << minPtsAfterSeek
+                            << ", m_cacheRange={" << m_cacheRange.first << ", " << m_cacheRange.second << "}" << "." << endl;
+                }
+                else if (!nullPktSent)
+                {
+                    // add a null packet to make sure that decoder will output all the preserved frames inside
+                    VideoPacket::Holder hVpkt(new VideoPacket({nullptr, false, false}));
+                    lock_guard<mutex> _lk(m_vpktQLock);
+                    m_vpktQ.push_back(hVpkt);
+                    nullPktSent = true;
                 }
             }
 
             // read avpacket
-            if (!m_dmxEof && doReadPacket)
+            if (doReadPacket)
             {
                 SelfFreeAVPacketPtr pktPtr = AllocSelfFreeAVPacketPtr();
                 fferr = av_read_frame(m_avfmtCtx, pktPtr.get());
@@ -978,7 +1044,9 @@ private:
                     if (pktPtr->stream_index == m_vidStmIdx)
                     {
                         m_logger->Log(VERBOSE) << "=== Get video packet: pts=" << pktPtr->pts << ", ts=" << (double)CvtPtsToMts(pktPtr->pts)/1000 << "." << endl;
+                        if (needPtsSafeCheck) ptsList.push_back(pktPtr->pts);
                         if (pktPtr->pts < minPtsAfterSeek) minPtsAfterSeek = pktPtr->pts;
+                        nullPktSent = false;
                         VideoPacket::Holder hVpkt(new VideoPacket({pktPtr, afterSeek, needFlushVfrmQ}));
                         afterSeek = needFlushVfrmQ = false;
                         lastPktPts = pktPtr->pts;
@@ -989,10 +1057,12 @@ private:
                 }
                 else if (fferr == AVERROR_EOF)
                 {
-                    m_dmxEof = true;
+                    demuxEof = true;
+                    if (!nullPktSent)
                     {
                         VideoPacket::Holder hVpkt(new VideoPacket({nullptr, afterSeek, needFlushVfrmQ}));
                         afterSeek = needFlushVfrmQ = false;
+                        nullPktSent = true;
                         lastPktPts = INT64_MAX;
                         lock_guard<mutex> _lk(m_vpktQLock);
                         m_vpktQ.push_back(hVpkt);
@@ -1011,8 +1081,6 @@ private:
         m_logger->Log(DEBUG) << "Leave DemuxThreadProc()." << endl;
     }
 
-    static const VideoFrame::Holder _EOF_HVFRM;
-
     void DecodeThreadProc()
     {
         m_logger->Log(DEBUG) << "Enter DecodeThreadProc()..." << endl;
@@ -1020,8 +1088,9 @@ private:
             this_thread::sleep_for(chrono::milliseconds(5));
 
         int fferr;
-        int64_t prevFrmPts = INT64_MIN;
         bool decoderEof = false;
+        bool nullPktSent = false;
+        VideoFrame::Holder hPrevFrm;
         while (!m_quitThread)
         {
             bool idleLoop = true;
@@ -1033,36 +1102,51 @@ private:
                 if (!m_vpktQ.empty())
                     hVpkt = m_vpktQ.front();
             }
-            if (hVpkt && hVpkt->isAfterSeek)
+            if (hVpkt)
             {
-                m_logger->Log(DEBUG) << "--> Seek[2]: Decoder reset and flush vframe queue. pts=" << hVpkt->pktPtr->pts << "." << endl;
-                prevFrmPts = INT64_MIN;
-                if (hVpkt->pktPtr)
+                if (hVpkt->isAfterSeek)
                 {
+                    if (hVpkt->needFlushVfrmQ || decoderEof)
+                    {
+                        if (hVpkt->pktPtr)
+                        {
+                            m_logger->Log(DEBUG) << "--> Seek[2]: Decoder reset. pts=" << hVpkt->pktPtr->pts << "." << endl;
+                            avcodec_flush_buffers(m_viddecCtx);
+                            decoderEof = false;
+                            nullPktSent = false;
+                        }
+                        else
+                        {
+                            decoderEof = true;
+                        }
+                        if (hVpkt->needFlushVfrmQ)
+                        {
+                            m_logger->Log(DEBUG) << ">>> Flush vframe queue." << endl;
+                            hPrevFrm = nullptr;
+                            lock_guard<mutex> _lk(m_vfrmQLock);
+                            m_vfrmQ.clear();
+                        }
+                        m_inSeeking = false;
+                    }
+                    else if (!nullPktSent)
+                    {
+                        m_logger->Log(VERBOSE) << "======= Send video packet: pts=(null) [2]" << endl;
+                        avcodec_send_packet(m_viddecCtx, nullptr);
+                        nullPktSent = true;
+                    }
+                }
+                else if (decoderEof)
+                {
+                    m_logger->Log(VERBOSE) << ">>> Decoder reset. pts=" << hVpkt->pktPtr->pts << "." << endl;
                     avcodec_flush_buffers(m_viddecCtx);
                     decoderEof = false;
-                    if (hVpkt->needFlushVfrmQ)
-                    {
-                        lock_guard<mutex> _lk(m_vfrmQLock);
-                        m_vfrmQ.clear();
-                    }
+                    nullPktSent = false;
                 }
-                else
-                {
-                    decoderEof = true;
-                    {
-                        lock_guard<mutex> _lk(m_vfrmQLock);
-                        if (hVpkt->needFlushVfrmQ)
-                            m_vfrmQ.clear();
-                        m_vfrmQ.push_back(_EOF_HVFRM);
-                    }
-                }
-                m_inSeeking = false;
             }
 
             // retrieve decoded frame
             bool doDecode = !decoderEof && m_pendingVidfrmCnt < m_maxPendingVidfrmCnt
-                    && (prevFrmPts < m_cacheRange.second || !m_readForward);
+                    && (!hPrevFrm || hPrevFrm->pts < m_cacheRange.second || !m_readForward);
             if (doDecode)
             {
                 AVFrame* pAvfrm = av_frame_alloc();
@@ -1075,7 +1159,7 @@ private:
                         m_pendingVidfrmCnt--;
                     });
                     m_pendingVidfrmCnt++;
-                    const int64_t pts = prevFrmPts = pAvfrm->pts;
+                    const int64_t pts = pAvfrm->pts;
 #if LIBAVUTIL_VERSION_MAJOR > 56
                     const int64_t dur = pAvfrm->duration;
 #else
@@ -1083,6 +1167,7 @@ private:
 #endif
                     pAvfrm = nullptr;
                     VideoFrame::Holder hVfrm(new VideoFrame({frmPtr, ImGui::ImMat(), (double)CvtPtsToMts(pts)/1000, pts, dur}));
+                    hPrevFrm = hVfrm;
                     lock_guard<mutex> _lk(m_vfrmQLock);
                     auto riter = find_if(m_vfrmQ.rbegin(), m_vfrmQ.rend(), [pts] (auto& vf) {
                         return vf->pts < pts;
@@ -1096,10 +1181,16 @@ private:
                 }
                 else if (fferr == AVERROR_EOF)
                 {
+                    m_logger->Log(VERBOSE) << ">>> Decoder EOF <<<" << endl;
                     decoderEof = true;
                     lock_guard<mutex> _lk(m_vfrmQLock);
-                    if (m_vfrmQ.empty() || m_vfrmQ.back()->pts != INT64_MAX)
-                        m_vfrmQ.push_back(_EOF_HVFRM);
+                    if (!m_vfrmQ.empty())
+                        m_vfrmQ.back()->isEofFrame = true;
+                    else if (hPrevFrm)
+                    {
+                        hPrevFrm->isEofFrame = true;
+                        m_vfrmQ.push_back(hPrevFrm);
+                    }
                 }
                 else if (fferr != AVERROR(EAGAIN))
                 {
@@ -1109,9 +1200,20 @@ private:
             }
 
             // send avpacket data to the decoder
-            if (hVpkt)
+            if (hVpkt && !nullPktSent)
             {
-                fferr = avcodec_send_packet(m_viddecCtx, hVpkt->pktPtr ? hVpkt->pktPtr.get() : nullptr);
+                AVPacket* pPkt = hVpkt->pktPtr ? hVpkt->pktPtr.get() : nullptr;
+                if (!pPkt) nullPktSent = true;
+                fferr = avcodec_send_packet(m_viddecCtx, pPkt);
+                if (fferr != AVERROR(EAGAIN))
+                {
+                    m_logger->Log(VERBOSE) << "======= Send video packet: pts=";
+                    if (pPkt)
+                        m_logger->Log(VERBOSE) << pPkt->pts << ", ts=" << (double)CvtPtsToMts(pPkt->pts)/1000;
+                    else
+                        m_logger->Log(VERBOSE) << "(null)";
+                    m_logger->Log(VERBOSE) << ", fferr=" << fferr << "." << endl;
+                }
                 bool popPkt = false;
                 if (fferr == 0)
                 {
@@ -1159,9 +1261,12 @@ private:
                 {
                     auto vf = *iter;
                     bool remove = false;
-                    if (m_readForward && vf->pts < m_cacheRange.first)
-                        remove = true;
-                    else if (vf->pts > m_cacheRange.second && vf->pts != INT64_MAX)
+                    if (vf->pts < m_cacheRange.first)
+                    {
+                        if (m_readForward && (!vf->isEofFrame || m_vfrmQ.size() > 1))
+                            remove = true;
+                    }
+                    else if (vf->pts > m_cacheRange.second)
                     {
                         if (firstGreaterPts)
                             firstGreaterPts = false;
@@ -1170,11 +1275,11 @@ private:
                     }
                     if (remove)
                     {
-                        m_logger->Log(VERBOSE) << "             --------- Remove video frame: pts=" << (*iter)->pts << ", ts=" << (*iter)->ts << "." << endl;
+                        m_logger->Log(VERBOSE) << "   --------- Remove video frame: pts=" << (*iter)->pts << ", ts=" << (*iter)->ts << "." << endl;
                         iter = m_vfrmQ.erase(iter);
                         continue;
                     }
-                    if (!hVfrm && vf->pts != INT64_MAX && vf->vmat.empty())
+                    if (!hVfrm && vf->vmat.empty())
                         hVfrm = vf;
                     iter++;
                 }
@@ -1183,6 +1288,7 @@ private:
             // convert avframe to mat
             if (hVfrm)
             {
+                // AddCheckPoint("ConvImg0");
                 if (!m_frmCvt.ConvertImage(hVfrm->frmPtr.get(), hVfrm->vmat, hVfrm->ts))
                 {
                     m_logger->Log(Error) << "AVFrameToImMatConverter::ConvertImage() FAILED at pos " << hVfrm->ts << "(" << hVfrm->pts << ")! Discard this frame." << endl;
@@ -1190,6 +1296,8 @@ private:
                     auto iter = find(m_vfrmQ.begin(), m_vfrmQ.end(), hVfrm);
                     if (iter != m_vfrmQ.end()) m_vfrmQ.erase(iter);
                 }
+                // AddCheckPoint("ConvImg1");
+                // LogCheckPointsTimeInfo(m_logger, VERBOSE);
                 hVfrm->frmPtr = nullptr;
                 idleLoop = false;
             }
@@ -1209,7 +1317,6 @@ private:
     MediaInfo::Holder m_hMediaInfo;
     bool m_opened{false};
     bool m_configured{false};
-    bool m_streamInfoFound{false};
     bool m_isImage{false};
     bool m_started{false};
     bool m_prepared{false};
@@ -1233,7 +1340,7 @@ private:
     list<VideoPacket::Holder> m_vpktQ;
     mutex m_vpktQLock;
     size_t m_vpktQMaxSize{8};
-    bool m_dmxEof{false};
+    int m_minGreaterPtsCountThanReadPos{2};
     // video decoding thread
     thread m_decodeThread;
     bool m_decThdRunning{false};
@@ -1248,7 +1355,7 @@ private:
     int64_t m_readPos{0};
     pair<int64_t, int64_t> m_cacheRange;
     pair<int32_t, int32_t> m_forwardCacheFrameCount{1, 3};
-    pair<int32_t, int32_t> m_backwardCacheFrameCount{8, 1};
+    pair<int32_t, int32_t> m_backwardCacheFrameCount{8, 2};
     mutex m_cacheRangeLock;
     pair<double, ImGui::ImMat> m_prevReadResult{0, ImGui::ImMat()};
     bool m_readForward{true};
@@ -1264,8 +1371,6 @@ private:
     AVFrameToImMatConverter m_frmCvt;
 };
 
-const VideoReader_Impl::VideoFrame::Holder VideoReader_Impl::_EOF_HVFRM(new VideoReader_Impl::VideoFrame({nullptr, ImGui::ImMat(), -1, INT64_MAX}));
-
 static const auto VIDEO_READER_HOLDER_DELETER = [] (MediaReader* p) {
     VideoReader_Impl* ptr = dynamic_cast<VideoReader_Impl*>(p);
     ptr->Close();
@@ -1275,5 +1380,10 @@ static const auto VIDEO_READER_HOLDER_DELETER = [] (MediaReader* p) {
 MediaReader::Holder MediaReader::CreateVideoInstance(const string& loggerName)
 {
     return MediaReader::Holder(new VideoReader_Impl(loggerName), VIDEO_READER_HOLDER_DELETER);
+}
+
+ALogger* MediaReader::GetVideoLogger()
+{
+    return Logger::GetLogger("VReader");
 }
 }

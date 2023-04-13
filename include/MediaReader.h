@@ -33,6 +33,7 @@ struct MediaReader
     static MEDIACORE_API Holder CreateInstance(const std::string& loggerName = "");
     static MEDIACORE_API Holder CreateVideoInstance(const std::string& loggerName = "");
     static MEDIACORE_API Logger::ALogger* GetLogger();
+    static MEDIACORE_API Logger::ALogger* GetVideoLogger();
 
     virtual bool Open(const std::string& url) = 0;
     virtual bool Open(MediaParser::Holder hParser) = 0;

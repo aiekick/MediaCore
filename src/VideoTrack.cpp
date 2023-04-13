@@ -357,7 +357,12 @@ public:
 
     void SetReadFrameIndex(int64_t index) override
     {
-        m_readFrames = index;
+        if (m_readFrames != index)
+        {
+            m_readFrames = index;
+            int64_t pos = index*m_frameRate.den*1000/m_frameRate.num;
+            SeekTo(pos);
+        }
     }
 
     void SkipOneFrame() override

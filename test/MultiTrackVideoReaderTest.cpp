@@ -62,7 +62,9 @@ static void MultiTrackVideoReader_Initialize(void** handle)
     GetDefaultLogger()
         ->SetShowLevels(DEBUG);
     MultiTrackVideoReader::GetLogger()
-        ->SetShowLevels(DEBUG);
+        ->SetShowLevels(INFO);
+    MediaReader::GetVideoLogger()
+        ->SetShowLevels(VERBOSE);
     GetSubtitleTrackLogger()
         ->SetShowLevels(DEBUG);
 
@@ -505,6 +507,7 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
         }
         else if (!frames.empty())
             vmat = frames[0].frame;
+        bool showDummyArea = true;
         if (readRes)
         {
             string imgTag = TimestampToString(vmat.time_stamp);
@@ -527,12 +530,14 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
             {
                 ImGui::ImMatToTexture(vmat, g_imageTid);
                 if (g_imageTid) ImGui::Image(g_imageTid, g_imageDisplaySize);
+                showDummyArea = false;
             }
-            else
-            {
-                ImGui::Dummy(g_imageDisplaySize);
-            }
+            ImGui::SameLine(20);
             ImGui::TextUnformatted(imgTag.c_str());
+        }
+        if (showDummyArea)
+        {
+            ImGui::Dummy(g_imageDisplaySize);
         }
 
         float currPos = playPos;

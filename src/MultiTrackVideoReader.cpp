@@ -857,9 +857,10 @@ private:
 
             if (m_seeking.exchange(false))
             {
-                const int64_t seekPos = m_seekPos;
-                m_logger->Log(DEBUG) << "\t\t ===== Seeking to pos=" << seekPos << endl;
+                int64_t seekPos = m_seekPos;
                 m_readFrameIdx = (int64_t)(floor((double)seekPos*m_frameRate.num/(m_frameRate.den*1000)));
+                seekPos = m_readFrameIdx*m_frameRate.den*1000/m_frameRate.num;  // seek pos aligned to frame positon
+                m_logger->Log(DEBUG) << "\t\t ===== Seeking to pos=" << seekPos << endl;
                 for (auto track : m_tracks)
                     track->SeekTo(seekPos);
                 {
