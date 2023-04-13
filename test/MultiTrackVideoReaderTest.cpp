@@ -15,6 +15,7 @@
 #include "MultiTrackVideoReader.h"
 #include "VideoTransformFilter.h"
 #include "FFUtils.h"
+#include "DebugHelper.h"
 #include "Logger.h"
 
 using namespace std;
@@ -64,7 +65,7 @@ static void MultiTrackVideoReader_Initialize(void** handle)
     MultiTrackVideoReader::GetLogger()
         ->SetShowLevels(INFO);
     MediaReader::GetVideoLogger()
-        ->SetShowLevels(VERBOSE);
+        ->SetShowLevels(INFO);
     GetSubtitleTrackLogger()
         ->SetShowLevels(DEBUG);
 
@@ -495,7 +496,7 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
 
         const int64_t readPos = (int64_t)(playPos*1000);
         vector<CorrelativeFrame> frames;
-        bool readRes = g_mtVidReader->ReadVideoFrameEx(readPos, frames, g_isSeeking);
+        bool readRes = g_mtVidReader->ReadVideoFrameEx(readPos, frames, true, !g_isSeeking);
         ImGui::ImMat vmat;
         if (s_showClipSourceFrame)
         {
@@ -507,10 +508,10 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
         }
         else if (!frames.empty())
             vmat = frames[0].frame;
-        bool showDummyArea = true;
+        string imgTag;
         if (readRes)
         {
-            string imgTag = TimestampToString(vmat.time_stamp);
+            imgTag = TimestampToString(vmat.time_stamp);
             bool imgValid = true;
             if (vmat.empty())
             {
@@ -527,18 +528,14 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
                 imgTag += "(bad format)";
             }
             if (imgValid)
-            {
                 ImGui::ImMatToTexture(vmat, g_imageTid);
-                if (g_imageTid) ImGui::Image(g_imageTid, g_imageDisplaySize);
-                showDummyArea = false;
-            }
-            ImGui::SameLine(20);
-            ImGui::TextUnformatted(imgTag.c_str());
         }
-        if (showDummyArea)
-        {
+        if (g_imageTid)
+            ImGui::Image(g_imageTid, g_imageDisplaySize);
+        else
             ImGui::Dummy(g_imageDisplaySize);
-        }
+        ImGui::SameLine(20);
+        ImGui::TextUnformatted(imgTag.c_str());
 
         float currPos = playPos;
         int64_t dur = g_mtVidReader->Duration();
@@ -546,6 +543,7 @@ static bool MultiTrackVideoReader_Frame(void * handle, bool app_will_quit)
         {
             g_isSeeking = true;
             g_playStartTp = Clock::now();
+            g_mtVidReader->SeekTo(currPos*1000, true);
             g_playStartPos = currPos;
         }
 

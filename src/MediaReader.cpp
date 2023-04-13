@@ -3055,7 +3055,11 @@ private:
                 else
                     oss << m_audReadNextTaskSeekPts0;
                 oss << ", m_bldtskTimeOrder=";
-                const auto bldtskTimeOrder = m_bldtskTimeOrder;
+                list<GopDecodeTaskHolder> bldtskTimeOrder;
+                {
+                    lock_guard<mutex> _lk(m_bldtskByTimeLock);
+                    bldtskTimeOrder = m_bldtskTimeOrder;
+                }
                 if (!bldtskTimeOrder.empty())
                 {
                     auto& first = bldtskTimeOrder.front();

@@ -359,9 +359,14 @@ public:
     {
         if (m_readFrames != index)
         {
+            bool isMoveForward = index > m_readFrames;
+            if (!m_readForward) isMoveForward = !isMoveForward;
             m_readFrames = index;
-            int64_t pos = index*m_frameRate.den*1000/m_frameRate.num;
-            SeekTo(pos);
+            if (!isMoveForward)
+            {
+                int64_t pos = index*m_frameRate.den*1000/m_frameRate.num;
+                SeekTo(pos);
+            }
         }
     }
 

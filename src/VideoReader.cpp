@@ -347,8 +347,8 @@ public:
         m_logger->Log(DEBUG) << "--> Seek[0]: Set seek pos " << ts << endl;
         lock_guard<mutex> lk(m_seekPosLock);
         m_seekPosTs = ts;
-        m_seekPosUpdated = true;
         m_inSeeking = true;
+        m_seekPosUpdated = true;
         int64_t seekPts = CvtMtsToPts(ts*1000);
         UpdateReadPos(seekPts);
         return true;
@@ -875,7 +875,7 @@ private:
         bool readForward = m_readForward;
         int64_t lastPktPts = INT64_MIN, minPtsAfterSeek = INT64_MAX;
         int64_t backwardReadLimitPts;
-        int64_t seekPts;
+        int64_t seekPts = INT64_MIN;
         list<int64_t> ptsList;
         bool needPtsSafeCheck = true;
         bool nullPktSent = false;
@@ -936,7 +936,6 @@ private:
                 if (m_seekPosUpdated)
                 {
                     seekOpTriggered = true;
-                    // m_inSeeking = needSeek = needFlushVfrmQ = true;
                     needSeek = needFlushVfrmQ = true;
                     seekPts = CvtMtsToPts(m_seekPosTs*1000);
                     m_seekPosUpdated = false;
@@ -1012,25 +1011,48 @@ private:
                     needPtsSafeCheck = false;
             }
             if (demuxEof) doReadPacket = false;
-            // under backward playback state, we need to pre-read and decode frames before the read-pos
-            if (!m_readForward && !doReadPacket)
+            if (!doReadPacket)
             {
-                if (minPtsAfterSeek >= m_cacheRange.first && minPtsAfterSeek > m_vidStartTime)
+                if (m_readForward)
                 {
-                    seekPts = backwardReadLimitPts = minPtsAfterSeek-1;
-                    needSeek = true;
-                    idleLoop = false;
-                    m_logger->Log(VERBOSE) << "          --- Backward variables update: backwardReadLimitPts=" << backwardReadLimitPts
-                            << ", lastPktPts=" << lastPktPts << ", minPtsAfterSeek=" << minPtsAfterSeek
-                            << ", m_cacheRange={" << m_cacheRange.first << ", " << m_cacheRange.second << "}" << "." << endl;
+                    if (minPtsAfterSeek != INT64_MAX && minPtsAfterSeek > seekPts && minPtsAfterSeek > m_readPos)
+                    {
+                        m_logger->Log(WARN) << "!!! >>>> minPtsAfterSeek(" << minPtsAfterSeek << ") > seekPts(" << seekPts << "), ";
+                        seekPts = m_readPos < seekPts ? m_readPos : seekPts-m_vidfrmIntvPts*4;
+                        m_logger->Log(WARN) << "try to seek to earlier position " << seekPts << "!" << endl;
+                        lock_guard<mutex> _lk(m_seekPosLock);
+                        m_seekPosTs = (double)CvtPtsToMts(seekPts)/1000;
+                        m_inSeeking = true;
+                        m_seekPosUpdated = true;
+                        idleLoop = false;
+                    }
                 }
-                else if (!nullPktSent)
+                else
                 {
-                    // add a null packet to make sure that decoder will output all the preserved frames inside
-                    VideoPacket::Holder hVpkt(new VideoPacket({nullptr, false, false}));
-                    lock_guard<mutex> _lk(m_vpktQLock);
-                    m_vpktQ.push_back(hVpkt);
-                    nullPktSent = true;
+                    // under backward playback state, we need to pre-read and decode frames before the read-pos
+                    if (minPtsAfterSeek >= m_cacheRange.first && minPtsAfterSeek > m_vidStartTime)
+                    {
+                        backwardReadLimitPts = minPtsAfterSeek-1;
+                        if (backwardReadLimitPts > m_readPos)
+                        {
+                            backwardReadLimitPts = m_readPos;
+                            needPtsSafeCheck = true;
+                        }
+                        seekPts = backwardReadLimitPts;
+                        needSeek = true;
+                        idleLoop = false;
+                        m_logger->Log(VERBOSE) << "          --- Backward variables update: backwardReadLimitPts=" << backwardReadLimitPts
+                                << ", lastPktPts=" << lastPktPts << ", minPtsAfterSeek=" << minPtsAfterSeek
+                                << ", m_cacheRange={" << m_cacheRange.first << ", " << m_cacheRange.second << "}" << "." << endl;
+                    }
+                    else if (!nullPktSent)
+                    {
+                        // add a null packet to make sure that decoder will output all the preserved frames inside
+                        VideoPacket::Holder hVpkt(new VideoPacket({nullptr, false, false}));
+                        lock_guard<mutex> _lk(m_vpktQLock);
+                        m_vpktQ.push_back(hVpkt);
+                        nullPktSent = true;
+                    }
                 }
             }
 
@@ -1153,7 +1175,7 @@ private:
                 fferr = avcodec_receive_frame(m_viddecCtx, pAvfrm);
                 if (fferr == 0)
                 {
-                    m_logger->Log(VERBOSE) << "======= Get video frame: pts=" << pAvfrm->pts << ", ts=" << (double)CvtPtsToMts(pAvfrm->pts)/1000 << "." << endl;
+                    m_logger->Log(VERBOSE) << "========== Get video frame: pts=" << pAvfrm->pts << ", ts=" << (double)CvtPtsToMts(pAvfrm->pts)/1000 << "." << endl;
                     SelfFreeAVFramePtr frmPtr(pAvfrm, [this] (AVFrame* p) {
                         av_frame_free(&p);
                         m_pendingVidfrmCnt--;

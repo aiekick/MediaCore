@@ -327,12 +327,13 @@ public:
 
         m_nextReadPos = INT64_MIN;
         m_seekPos = pos;
+        m_inSeekingState = true;
         m_seeking = true;
-        // m_logger->Log(DEBUG) << "---------------------> Set seekPos=" << pos << endl;
+        m_logger->Log(DEBUG) << "------> SeekTo seekPos=" << pos << endl;
 
         if (!async)
         {
-            while (m_seeking && !m_quit)
+            while (m_inSeekingState && !m_quit)
                 this_thread::sleep_for(chrono::milliseconds(5));
             if (m_quit)
                 return false;
@@ -377,59 +378,62 @@ public:
         }
 
         int64_t targetFrmidx = (int64_t)(floor((double)pos*m_frameRate.num/(m_frameRate.den*1000)));
-        if (pos != m_prevReadPos)
-        {
-            m_logger->Log(DEBUG) << ">> Read video frame at pos=" << pos << ", targetFrmidx=" << targetFrmidx
-                    << ", m_readFrameIdx=" << m_readFrameIdx << endl;
-            m_prevReadPos = pos;
-            m_nextReadPos = pos+33;
-        }
-
         if (nonblocking)
         {
-            lock_guard<mutex> lk2(m_outputCacheLock);
-            if ((m_readForward && targetFrmidx > m_readFrameIdx) || (!m_readForward && m_readFrameIdx > targetFrmidx))
+            if (!m_inSeekingState && pos != m_prevReadPos)
             {
-                auto popCnt = m_readForward ? targetFrmidx-m_readFrameIdx : m_readFrameIdx-targetFrmidx;
-                if (popCnt >= m_outputCache.size())
-                {
-                    popCnt = m_outputCache.size();
-                    m_outputCache.clear();
-                }
-                else
-                {
-                    int i = popCnt;
-                    while (i-- > 0)
-                        m_outputCache.pop_front();
-                }
-                if (m_readForward)
-                    m_readFrameIdx += popCnt;
-                else
-                    m_readFrameIdx -= popCnt;
+                m_logger->Log(DEBUG) << ">> Read video frame at pos=" << pos << ", targetFrmidx=" << targetFrmidx
+                        << ", m_readFrameIdx=" << m_readFrameIdx << endl;
+                m_prevReadPos = pos;
+                m_nextReadPos = pos+33;
             }
-            if (precise)
+
             {
-                if (targetFrmidx != m_readFrameIdx || m_outputCache.empty())
+                lock_guard<mutex> lk2(m_outputCacheLock);
+                if (((m_readForward && targetFrmidx > m_readFrameIdx) || (!m_readForward && m_readFrameIdx > targetFrmidx))
+                    && !m_inSeekingState)
                 {
-                    m_logger->Log(DEBUG) << "---> NO AVAILABLE frame" << endl;
+                    auto popCnt = m_readForward ? targetFrmidx-m_readFrameIdx : m_readFrameIdx-targetFrmidx;
+                    if (popCnt >= m_outputCache.size())
+                    {
+                        popCnt = m_outputCache.size();
+                        m_outputCache.clear();
+                    }
+                    else
+                    {
+                        int i = popCnt;
+                        while (i-- > 0)
+                            m_outputCache.pop_front();
+                    }
+                    if (m_readForward)
+                        m_readFrameIdx += popCnt;
+                    else
+                        m_readFrameIdx -= popCnt;
+                }
+                if (precise)
+                {
+                    if (targetFrmidx != m_readFrameIdx || m_outputCache.empty())
+                    {
+                        m_logger->Log(DEBUG) << "---> NO AVAILABLE frame" << endl;
+                        return false;
+                    }
+                    frames = m_outputCache.front();
+                }
+                else if (!m_seekingFlash.empty())
+                {
+                    m_logger->Log(DEBUG) << "---> USE m_seekingFlash." << endl;
+                    frames = m_seekingFlash;
+                }
+                else if (!m_outputCache.empty())
+                {
+                    m_logger->Log(DEBUG) << "---> USE m_outputCache.front()" << endl;
+                    frames = m_outputCache.front();
+                }
+                else
+                {
+                    m_logger->Log(WARN) << "No AVAILABLE frame to read!" << endl;
                     return false;
                 }
-                frames = m_outputCache.front();
-            }
-            else if (!m_seekingFlash.empty())
-            {
-                m_logger->Log(DEBUG) << "---> USE m_seekingFlash." << endl;
-                frames = m_seekingFlash;
-            }
-            else if (!m_outputCache.empty())
-            {
-                m_logger->Log(DEBUG) << "---> USE m_outputCache.front()" << endl;
-                frames = m_outputCache.front();
-            }
-            else
-            {
-                m_logger->Log(WARN) << "No AVAILABLE frame to read!" << endl;
-                return false;
             }
 
             auto& vmat = frames[0].frame;
@@ -441,6 +445,9 @@ public:
         }
         else
         {
+            while (!m_quit && m_inSeekingState)
+                this_thread::sleep_for(chrono::milliseconds(5));
+
             if ((m_readForward && (targetFrmidx < m_readFrameIdx || targetFrmidx-m_readFrameIdx >= m_outputCacheSize)) ||
                 (!m_readForward && (targetFrmidx > m_readFrameIdx || m_readFrameIdx-targetFrmidx >= m_outputCacheSize)))
             {
@@ -868,6 +875,7 @@ private:
                     m_outputCache.clear();
                 }
                 afterSeek = true;
+                m_inSeekingState = false;
             }
 
             if (m_nextReadPos != INT64_MIN)
@@ -1040,6 +1048,7 @@ private:
 
     int64_t m_seekPos{0};
     atomic_bool m_seeking{false};
+    bool m_inSeekingState{false};
     vector<CorrelativeFrame> m_seekingFlash;
 
     list<SubtitleTrackHolder> m_subtrks;
