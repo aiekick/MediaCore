@@ -115,7 +115,7 @@ static void MediaReader_Initialize(void** handle)
 
     // g_vidrdr = MediaReader::CreateInstance();
     g_vidrdr = MediaReader::CreateVideoInstance();
-    g_vidrdr->SetLogLevel(INFO);
+    g_vidrdr->SetLogLevel(DEBUG);
     g_audrdr = MediaReader::CreateInstance();
     g_audrdr->SetLogLevel(INFO);
 

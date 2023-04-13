@@ -3055,10 +3055,11 @@ private:
                 else
                     oss << m_audReadNextTaskSeekPts0;
                 oss << ", m_bldtskTimeOrder=";
-                if (!m_bldtskTimeOrder.empty())
+                const auto bldtskTimeOrder = m_bldtskTimeOrder;
+                if (!bldtskTimeOrder.empty())
                 {
-                    auto& first = m_bldtskTimeOrder.front();
-                    auto& last = m_bldtskTimeOrder.back();
+                    auto& first = bldtskTimeOrder.front();
+                    auto& last = bldtskTimeOrder.back();
                     oss << "(" << first->seekPts.first << "," << first->seekPts.second << ") ~ ("
                         << last->seekPts.first << "," << last->seekPts.second << ")";
                 }

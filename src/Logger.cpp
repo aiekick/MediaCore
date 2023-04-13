@@ -134,7 +134,7 @@ namespace Logger
                 auto now = chrono::system_clock::now();
                 time_t t = chrono::system_clock::to_time_t(now);
                 int32_t millisec = chrono::duration_cast<chrono::milliseconds>(now.time_since_epoch()).count()%1000;
-                oss << put_time(localtime(&t), "%T") << "." << setfill('0') << setw(3) << millisec << " ";
+                oss << put_time(localtime(&t), "%H:%M:%S") << "." << setfill('0') << setw(3) << millisec << " ";
                 empty = false;
             }
             if (m_showName)
