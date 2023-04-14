@@ -1013,22 +1013,19 @@ private:
             if (demuxEof) doReadPacket = false;
             if (!doReadPacket)
             {
-                if (m_readForward)
+                if (minPtsAfterSeek != INT64_MAX && seekPts != INT64_MIN
+                    && minPtsAfterSeek > seekPts && minPtsAfterSeek > m_readPos)
                 {
-                    if (minPtsAfterSeek != INT64_MAX && seekPts != INT64_MIN
-                        && minPtsAfterSeek > seekPts && minPtsAfterSeek > m_readPos)
-                    {
-                        m_logger->Log(WARN) << "!!! >>>> minPtsAfterSeek(" << minPtsAfterSeek << ") > seekPts(" << seekPts << "), ";
-                        seekPts = m_readPos < seekPts ? m_readPos : seekPts-m_vidfrmIntvPts*4;
-                        m_logger->Log(WARN) << "try to seek to earlier position " << seekPts << "!" << endl;
-                        lock_guard<mutex> _lk(m_seekPosLock);
-                        m_seekPosTs = (double)CvtPtsToMts(seekPts)/1000;
-                        m_inSeeking = true;
-                        m_seekPosUpdated = true;
-                        idleLoop = false;
-                    }
+                    m_logger->Log(WARN) << "!!! >>>> minPtsAfterSeek(" << minPtsAfterSeek << ") > seekPts(" << seekPts << "), ";
+                    seekPts = m_readPos < seekPts ? m_readPos : seekPts-m_vidfrmIntvPts*4;
+                    m_logger->Log(WARN) << "try to seek to earlier position " << seekPts << "!" << endl;
+                    lock_guard<mutex> _lk(m_seekPosLock);
+                    m_seekPosTs = (double)CvtPtsToMts(seekPts)/1000;
+                    m_inSeeking = true;
+                    m_seekPosUpdated = true;
+                    idleLoop = false;
                 }
-                else
+                else if (!m_readForward)
                 {
                     // under backward playback state, we need to pre-read and decode frames before the read-pos
                     if (minPtsAfterSeek >= m_cacheRange.first && minPtsAfterSeek > m_vidStartTime)
@@ -1168,8 +1165,14 @@ private:
             }
 
             // retrieve decoded frame
+            int64_t tailFramePts = INT64_MIN;
+            {
+                lock_guard<mutex> _lk(m_vfrmQLock);
+                if (!m_vfrmQ.empty())
+                    tailFramePts = m_vfrmQ.back()->pts;
+            }
             bool doDecode = !decoderEof && m_pendingVidfrmCnt < m_maxPendingVidfrmCnt
-                    && (!hPrevFrm || hPrevFrm->pts < m_cacheRange.second || !m_readForward);
+                    && (tailFramePts < m_cacheRange.second || !m_readForward);
             if (doDecode)
             {
                 AVFrame* pAvfrm = av_frame_alloc();
