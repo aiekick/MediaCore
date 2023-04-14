@@ -1015,7 +1015,8 @@ private:
             {
                 if (m_readForward)
                 {
-                    if (minPtsAfterSeek != INT64_MAX && minPtsAfterSeek > seekPts && minPtsAfterSeek > m_readPos)
+                    if (minPtsAfterSeek != INT64_MAX && seekPts != INT64_MIN
+                        && minPtsAfterSeek > seekPts && minPtsAfterSeek > m_readPos)
                     {
                         m_logger->Log(WARN) << "!!! >>>> minPtsAfterSeek(" << minPtsAfterSeek << ") > seekPts(" << seekPts << "), ";
                         seekPts = m_readPos < seekPts ? m_readPos : seekPts-m_vidfrmIntvPts*4;
