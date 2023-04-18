@@ -2,6 +2,7 @@
 #include <unordered_map>
 #include <iomanip>
 #include <thread>
+#include <sstream>
 #include "DebugHelper.h"
 
 using namespace std;
@@ -191,7 +192,7 @@ public:
         return tspan;
     }
 
-    TimeSpan LogAndClearStatistics(Level l, ALogger* logger)
+    TimeSpan LogAndClearStatistics(Level l, ALogger* logger) override
     {
         auto tpNow = SysClock::now();
         auto tpBegin = m_prevLogTp.time_since_epoch().count() == 0 ? m_startTp : m_prevLogTp;
