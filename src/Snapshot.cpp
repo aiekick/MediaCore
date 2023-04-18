@@ -60,7 +60,7 @@ class Generator_Impl : public Snapshot::Generator
 public:
     Generator_Impl()
     {
-        m_logger = MediaCore::Snapshot::GetLogger();
+        m_logger = Snapshot::GetLogger();
     }
 
     bool Open(const string& url) override
@@ -262,6 +262,7 @@ public:
 
     bool ConfigSnapWindow(double& windowSize, double frameCount, bool forceRefresh) override
     {
+        // AutoSection _as("CfgSsWnd");
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (frameCount < 1)
         {
@@ -505,6 +506,7 @@ private:
 
     void CalcWindowVariables()
     {
+        // AutoSection _as("CalcWnd");
         m_ssIntvMts = m_snapWindowSize*1000./m_wndFrmCnt;
         if (m_ssIntvMts < m_vidfrmIntvMts)
             m_ssIntvMts = m_vidfrmIntvMts;
@@ -1215,6 +1217,32 @@ private:
         m_logger->Log(VERBOSE) << "Leave UpdateSnapshotThreadProc()." << endl;
     }
 
+    void FreeGopTaskProc()
+    {
+        m_logger->Log(VERBOSE) << "Enter FreeGopTaskProc()." << endl;
+        while (!m_quit)
+        {
+            bool idleLoop = true;
+
+            list<GopDecodeTaskHolder> clearList;
+            {
+                lock_guard<mutex> _lk(m_goptskFreeLock);
+                if (!m_goptskToFree.empty())
+                    clearList.splice(clearList.end(), m_goptskToFree);
+            }
+            if (!clearList.empty())
+            {
+                m_logger->Log(VERBOSE) << "Clear " << clearList.size() << " gop tasks." << endl;
+                clearList.clear();
+                idleLoop = false;
+            }
+
+            if (idleLoop)
+                this_thread::sleep_for(chrono::milliseconds(20));
+        }
+        m_logger->Log(VERBOSE) << "Leave FreeGopTaskProc()." << endl;
+    }
+
     void StartAllThreads()
     {
         string fileName = SysUtils::ExtractFileName(m_hParser->GetUrl());
@@ -1229,10 +1257,13 @@ private:
         m_updateSsThread = thread(&Generator_Impl::UpdateSnapshotThreadProc, this);
         thnOss.str(""); thnOss << "SsgUss-" << fileName;
         SysUtils::SetThreadName(m_updateSsThread, thnOss.str());
-    }
+        m_freeGoptskThread = thread(&Generator_Impl::FreeGopTaskProc, this);
+        thnOss.str(""); thnOss << "SsgFgt-" << fileName;
+        SysUtils::SetThreadName(m_freeGoptskThread, thnOss.str());    }
 
     void WaitAllThreadsQuit()
     {
+        // AutoSection _as("WATQ");
         m_quit = true;
         if (m_demuxThread.joinable())
         {
@@ -1249,12 +1280,45 @@ private:
             m_updateSsThread.join();
             m_updateSsThread = thread();
         }
+        if (m_freeGoptskThread.joinable())
+        {
+            m_freeGoptskThread.join();
+            m_freeGoptskThread = thread();
+        }
     }
 
     void FlushAllQueues()
     {
-        m_goptskPrepareList.clear();
-        m_goptskList.clear();
+        // AutoSection _as("FAQ");
+        {
+            lock_guard<mutex> lk(m_deprecatedTextureLock);
+            for (auto tsk : m_goptskPrepareList)
+            {
+                for (auto p: tsk->ssAvfrmList)
+                    if (p->img->mTextureHolder)
+                        m_deprecatedTextures.push_back(std::move(p->img->mTextureHolder));
+                for (auto p: tsk->ssImgList)
+                    if (p->img->mTextureHolder)
+                        m_deprecatedTextures.push_back(std::move(p->img->mTextureHolder));
+            }
+            for (auto tsk : m_goptskList)
+            {
+                for (auto p: tsk->ssAvfrmList)
+                    if (p->img->mTextureHolder)
+                        m_deprecatedTextures.push_back(std::move(p->img->mTextureHolder));
+                for (auto p: tsk->ssImgList)
+                    if (p->img->mTextureHolder)
+                        m_deprecatedTextures.push_back(std::move(p->img->mTextureHolder));
+            }
+        }
+
+        {
+            lock_guard<mutex> _lk(m_goptskFreeLock);
+            if (!m_goptskPrepareList.empty())
+                m_goptskToFree.splice(m_goptskToFree.end(), m_goptskPrepareList);
+            if (!m_goptskList.empty())
+                m_goptskToFree.splice(m_goptskToFree.end(), m_goptskList);
+        }
     }
 
     struct _Picture
@@ -1381,7 +1445,6 @@ private:
         list<_Picture::Holder> ssAvfrmList;
         mutex ssAvfrmListLock;
         list<_Picture::Holder> ssImgList;
-        // atomic_int32_t ssfrmCnt{0};
         list<AVPacket*> avpktQ;
         list<AVPacket*> avpktBkupQ;
         mutex avpktQLock;
@@ -1528,6 +1591,7 @@ private:
 
     void ResetGopDecodeTaskList()
     {
+        // AutoSection _as("RstGop");
         {
             lock(m_goptskListReadLocks[0], m_goptskListReadLocks[1], m_goptskListReadLocks[2]);
             lock_guard<mutex> lk0(m_goptskListReadLocks[0], adopt_lock);
@@ -1819,8 +1883,10 @@ public:
 
         bool GetSnapshots(double startPos, vector<Image::Holder>& snapshots) override
         {
+            // AutoSection _as("GetSs");
             UpdateSnapwnd(startPos);
-            return m_owner->GetSnapshots(startPos, snapshots);
+            auto res = m_owner->GetSnapshots(startPos, snapshots);
+            return res;
         }
 
         Viewer::Holder CreateViewer(double pos) override
@@ -1845,6 +1911,7 @@ public:
 
         bool UpdateSnapshotTexture(vector<Image::Holder>& snapshots) override
         {
+            // AutoSection _as("UpdSsTx");
             // free deprecated textures
             {
                 lock_guard<mutex> lktid(m_owner->m_deprecatedTextureLock);
@@ -1881,6 +1948,7 @@ public:
 
         void UpdateSnapwnd(double wndpos, bool force = false)
         {
+            // AutoSection _as("UpdSnapWnd");
             _SnapWindow snapwnd = m_owner->CreateSnapWindow(wndpos);
             list<_GopDecodeTask::Range> taskRanges;
             bool taskRangeChanged = false;
@@ -1975,6 +2043,8 @@ private:
     thread m_viddecThread;
     // update snapshots thread
     thread m_updateSsThread;
+    // free gop task thread
+    thread m_freeGoptskThread;
 
     int64_t m_vidStartMts{0};
     int64_t m_vidStartPts{0};
@@ -1997,6 +2067,8 @@ private:
     list<GopDecodeTaskHolder> m_goptskPrepareList;
     list<GopDecodeTaskHolder> m_goptskList;
     mutex m_goptskListReadLocks[3];
+    list<GopDecodeTaskHolder> m_goptskToFree;
+    mutex m_goptskFreeLock;
     atomic_int32_t m_pendingVidfrmCnt{0};
     int32_t m_maxPendingVidfrmCnt{2};
     // textures

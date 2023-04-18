@@ -51,14 +51,34 @@ namespace MediaCore
     {
         using Holder = std::shared_ptr<PerformanceAnalyzer>;
         static MEDIACORE_API Holder CreateInstance(const std::string& name);
+        static MEDIACORE_API Holder GetThreadLocalInstance();
 
         virtual void SetLogInterval(uint32_t millisec) = 0;
         virtual void Start() = 0;
         virtual void End() = 0;
+        virtual void Reset() = 0;
         virtual void SectionStart(const std::string& name) = 0;
         virtual void SectionEnd() = 0;
+        virtual void PushAndSectionStart(const std::string& name) = 0;
+        virtual void PopSection() = 0;
         virtual void EnterSleep() = 0;
         virtual void QuitSleep() = 0;
-        virtual TimeSpan LogOnInterval(Logger::Level l, Logger::ALogger* logger = nullptr) = 0;
+        virtual TimeSpan LogStatisticsOnInterval(Logger::Level l, Logger::ALogger* logger = nullptr) = 0;
+        virtual TimeSpan LogAndClearStatistics(Logger::Level l, Logger::ALogger* logger = nullptr) = 0;
+    };
+
+    class MEDIACORE_API AutoSection
+    {
+    public:
+        AutoSection(const std::string& name, PerformanceAnalyzer::Holder hPa = nullptr);
+        ~AutoSection();
+
+        AutoSection() = delete;
+        AutoSection(const AutoSection&) = delete;
+        AutoSection(AutoSection&&) = delete;
+        AutoSection& operator=(const AutoSection&) = delete;
+
+    private:
+        PerformanceAnalyzer::Holder m_hPa;
     };
 }

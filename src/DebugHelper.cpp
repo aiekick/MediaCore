@@ -1,6 +1,7 @@
 #include <list>
 #include <unordered_map>
 #include <iomanip>
+#include <thread>
 #include "DebugHelper.h"
 
 using namespace std;
@@ -78,30 +79,93 @@ public:
 
     void Start() override
     {
-        if (m_currTimeSpan.second.first.time_since_epoch().count() == 0)
-            m_currTimeSpan.second.first = SysClock::now();
+        auto tpNow = SysClock::now();
+        if (m_startTp.time_since_epoch().count() == 0)
+            m_startTp = tpNow;
+        if (m_currTspan.second.first.time_since_epoch().count() == 0)
+            m_currTspan.second.first = tpNow;
     }
 
     void End() override
     {
-        EnrollCurrentTimeSpan();
+        auto tpNow = SysClock::now();
+        EnrollCurrentTimeSpan(tpNow);
+        while (!m_tspanStack.empty())
+        {
+            m_currTspan = m_tspanStack.back();
+            m_tspanStack.pop_back();
+            EnrollCurrentTimeSpan(tpNow);
+        }
     }
 
-    void SectionStart(const std::string& name) override
+    void Reset() override
     {
-        EnrollCurrentTimeSpan(name);
+        m_isInSleep = false;
+        m_prevLogTp = TimePoint();
+        m_tspanTable.clear();
+        m_sleepTspans.clear();
+        m_tspanStack.clear();
+        auto tpNow = SysClock::now();
+        m_startTp = tpNow;
+        m_currTspan.first = "";
+        m_currTspan.second.first = tpNow;
+        m_currTspan.second.second = TimePoint();
+    }
+
+    void SectionStart(const string& name) override
+    {
+        EnrollCurrentTimeSpan(SysClock::now(), name);
     }
 
     void SectionEnd() override
     {
-        EnrollCurrentTimeSpan();
+        EnrollCurrentTimeSpan(SysClock::now());
+    }
+
+    void PushAndSectionStart(const string& name) override
+    {
+        auto tpNow = SysClock::now();
+        if (m_isInSleep)
+        {
+            m_currTspan.second.second = tpNow;
+            m_sleepTspans.push_back(m_currTspan.second);
+            m_isInSleep = false;
+            m_currTspan.second.first = m_currTspan.second.second;
+        }
+        m_currTspan.second.second = tpNow;
+        if (m_currTspan.first.empty())
+        {
+            if (m_currTspan.second.second > m_currTspan.second.first)
+                EnrollCurrentTimeSpan(tpNow, name);
+            else
+            {
+                m_currTspan.first = name;
+                m_currTspan.second.first = m_currTspan.second.second = tpNow;
+            }
+        }
+        else
+        {
+            m_tspanStack.push_back(m_currTspan);
+            m_currTspan.first = name;
+            m_currTspan.second.first = m_currTspan.second.second = tpNow;
+        }
+    }
+
+    void PopSection() override
+    {
+        EnrollCurrentTimeSpan(SysClock::now());
+        if (!m_tspanStack.empty())
+        {
+            m_currTspan = m_tspanStack.back();
+            m_tspanStack.pop_back();
+        }
     }
 
     void EnterSleep() override
     {
         if (!m_isInSleep)
         {
-            EnrollCurrentTimeSpan(m_currTimeSpan.first);
+            EnrollCurrentTimeSpan(SysClock::now(), m_currTspan.first);
             m_isInSleep = true;
         }
     }
@@ -110,33 +174,74 @@ public:
     {
         if (m_isInSleep)
         {
-            EnrollCurrentTimeSpan(m_currTimeSpan.first);
+            EnrollCurrentTimeSpan(SysClock::now(), m_currTspan.first);
         }
     }
 
-    TimeSpan LogOnInterval(Level l, ALogger* logger) override
+    TimeSpan LogStatisticsOnInterval(Level l, ALogger* logger) override
     {
-        auto nowTp = SysClock::now();
-        auto beginTp = nowTp-chrono::duration_cast<SysClock::duration>(chrono::milliseconds(m_logInterval));
-        if (beginTp < m_prevLogTp)
+        auto tpNow = SysClock::now();
+        auto tpBegin = tpNow-chrono::duration_cast<SysClock::duration>(chrono::milliseconds(m_logInterval));
+        if (tpBegin < m_prevLogTp)
             return TimeSpan();
 
+        TimeSpan tspan = {tpBegin, tpNow};
+        LogStatisticsInTimeSpan(tspan, tpNow, l, logger);
+        m_prevLogTp = tpNow;
+        return tspan;
+    }
+
+    TimeSpan LogAndClearStatistics(Level l, ALogger* logger)
+    {
+        auto tpNow = SysClock::now();
+        auto tpBegin = m_prevLogTp.time_since_epoch().count() == 0 ? m_startTp : m_prevLogTp;
+        TimeSpan tspan = {tpBegin, tpNow};
+        LogStatisticsInTimeSpan(tspan, tpNow, l, logger);
+        m_tspanTable.clear();
+        m_sleepTspans.clear();
+        m_prevLogTp = tpNow;
+        return tspan;
+    }
+
+private:
+    void EnrollCurrentTimeSpan(const TimePoint& tpNow, const string& name = "")
+    {
+        m_currTspan.second.second = tpNow;
+        if (m_isInSleep)
+        {
+            m_sleepTspans.push_back(m_currTspan.second);
+            m_isInSleep = false;
+        }
+        else
+        {
+            auto iter = m_tspanTable.find(m_currTspan.first);
+            if (iter != m_tspanTable.end())
+                iter->second.push_back(m_currTspan.second);
+            else
+                m_tspanTable.insert({m_currTspan.first, {m_currTspan.second}});
+        }
+        m_currTspan.first = name;
+        m_currTspan.second.first = m_currTspan.second.second;
+    }
+
+    void LogStatisticsInTimeSpan(const TimeSpan& tspan, const TimePoint& tpNow, Level l, ALogger* logger)
+    {
         unordered_map<string, SysClock::duration> timeCostTable;
-        for (auto& elem : m_timeSpanTable)
+        for (auto& elem : m_tspanTable)
         {
             SysClock::duration t(0);
             auto& spanList = elem.second;
             auto spanIt = spanList.begin();
             while (spanIt != spanList.end())
             {
-                if (spanIt->second <= beginTp)
+                if (spanIt->second <= tspan.first)
                 {
                     spanIt = spanList.erase(spanIt);
                 }
                 else
                 {
-                    if (spanIt->first < beginTp)
-                        t += spanIt->second-beginTp;
+                    if (spanIt->first < tspan.first)
+                        t += spanIt->second-tspan.first;
                     else
                         t += spanIt->second-spanIt->first;
                     spanIt++;
@@ -148,20 +253,20 @@ public:
             else
                 timeCostTable[elem.first] = t;
         }
-        if (!m_sleepTimeSpans.empty())
+        if (!m_sleepTspans.empty())
         {
             SysClock::duration t(0);
-            auto spanIt = m_sleepTimeSpans.begin();
-            while (spanIt != m_sleepTimeSpans.end())
+            auto spanIt = m_sleepTspans.begin();
+            while (spanIt != m_sleepTspans.end())
             {
-                if (spanIt->second <= beginTp)
+                if (spanIt->second <= tspan.first)
                 {
-                    spanIt = m_sleepTimeSpans.erase(spanIt);
+                    spanIt = m_sleepTspans.erase(spanIt);
                 }
                 else
                 {
-                    if (spanIt->first < beginTp)
-                        t += spanIt->second-beginTp;
+                    if (spanIt->first < tspan.first)
+                        t += spanIt->second-tspan.first;
                     else
                         t += spanIt->second-spanIt->first;
                     spanIt++;
@@ -169,12 +274,23 @@ public:
             }
             timeCostTable[SLEEP_TIMESPAN_TAG] = t;
         }
+        // add time-cost of 'm_currTspan'
+        {
+            auto t = tspan.second-(m_currTspan.second.first > tspan.first ? m_currTspan.second.first : tspan.first);
+            if (t.count() > 0)
+            {
+                auto iter = timeCostTable.find(m_currTspan.first);
+                if (iter != timeCostTable.end())
+                    iter->second += t;
+                else
+                    timeCostTable[m_currTspan.first] = t;
+            }
+        }
 
         if (!logger)
             logger = GetDefaultLogger();
 
-        TimeSpan logTs = {beginTp, nowTp};
-        logger->Log(l) << "PerformanceAnalyzer['" << m_name << "' " << logTs << "] : ";
+        logger->Log(l) << "PerformanceAnalyzer['" << m_name << "' " << tspan << "] : ";
         if (timeCostTable.empty())
             logger->Log(l) << "<EMPTY>";
         else
@@ -215,30 +331,6 @@ public:
             }
         }
         logger->Log(l) << endl;
-
-        m_prevLogTp = nowTp;
-        return logTs;
-    }
-
-private:
-    void EnrollCurrentTimeSpan(const string& name = "")
-    {
-        m_currTimeSpan.second.second = SysClock::now();
-        if (m_isInSleep)
-        {
-            m_sleepTimeSpans.push_back(m_currTimeSpan.second);
-            m_isInSleep = false;
-        }
-        else
-        {
-            auto iter = m_timeSpanTable.find(m_currTimeSpan.first);
-            if (iter != m_timeSpanTable.end())
-                iter->second.push_back(m_currTimeSpan.second);
-            else
-                m_timeSpanTable.insert({m_currTimeSpan.first, {m_currTimeSpan.second}});
-        }
-        m_currTimeSpan.first = name;
-        m_currTimeSpan.second.first = m_currTimeSpan.second.second;
     }
 
     static const string OTHER_TIMESPAN_TAG;
@@ -246,12 +338,13 @@ private:
 
 private:
     string m_name;
-    unordered_map<string, list<TimeSpan>> m_timeSpanTable;
-    list<TimeSpan> m_sleepTimeSpans;
+    unordered_map<string, list<TimeSpan>> m_tspanTable;
+    list<TimeSpan> m_sleepTspans;
+    pair<string, TimeSpan> m_currTspan;
+    list<pair<string, TimeSpan>> m_tspanStack;
     bool m_isInSleep{false};
-    pair<string, TimeSpan> m_currTimeSpan;
     uint32_t m_logInterval{1000};
-    TimePoint m_prevLogTp;
+    TimePoint m_startTp, m_prevLogTp;
 };
 
 const string PerformanceAnalyzer_Impl::OTHER_TIMESPAN_TAG = "<other>";
@@ -263,5 +356,44 @@ PerformanceAnalyzer::Holder PerformanceAnalyzer::CreateInstance(const string& na
         PerformanceAnalyzer_Impl* ptr = dynamic_cast<PerformanceAnalyzer_Impl*>(p);
         delete ptr;
     });
+}
+
+static unordered_map<thread::id, PerformanceAnalyzer::Holder> _THREAD_PERFORMANCE_ANALYZER_TABLE;
+static mutex _THREAD_PERFORMANCE_ANALYZER_TABLE_LOCK;
+
+PerformanceAnalyzer::Holder PerformanceAnalyzer::GetThreadLocalInstance()
+{
+    PerformanceAnalyzer::Holder hPa;
+    auto thid = this_thread::get_id();
+    auto iter = _THREAD_PERFORMANCE_ANALYZER_TABLE.find(thid);
+    if (iter == _THREAD_PERFORMANCE_ANALYZER_TABLE.end())
+    {
+        ostringstream oss;
+        oss << "th#" << thid;
+        hPa = PerformanceAnalyzer::Holder(new PerformanceAnalyzer_Impl(oss.str()), [] (PerformanceAnalyzer* p) {
+            PerformanceAnalyzer_Impl* ptr = dynamic_cast<PerformanceAnalyzer_Impl*>(p);
+            delete ptr;
+        });
+        lock_guard<mutex> lk(_THREAD_PERFORMANCE_ANALYZER_TABLE_LOCK);
+        _THREAD_PERFORMANCE_ANALYZER_TABLE[thid] = hPa;
+    }
+    else
+    {
+        hPa = _THREAD_PERFORMANCE_ANALYZER_TABLE[thid];
+    }
+    return hPa;
+}
+
+AutoSection::AutoSection(const string& name, PerformanceAnalyzer::Holder hPa)
+{
+    if (!hPa)
+        hPa = PerformanceAnalyzer::GetThreadLocalInstance();
+    m_hPa = hPa;
+    m_hPa->PushAndSectionStart(name);
+}
+
+AutoSection::~AutoSection()
+{
+    m_hPa->PopSection();
 }
 }

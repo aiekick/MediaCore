@@ -583,7 +583,7 @@ public:
         m_duration = dur;
     }
 
-    bool Refresh() override
+    bool Refresh(bool async) override
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
         if (!m_started)
@@ -594,7 +594,7 @@ public:
 
         UpdateDuration();
 
-        SeekTo(ReadPos(), false);
+        SeekTo(ReadPos(), async);
         return true;
     }
 
@@ -910,39 +910,42 @@ private:
             if (m_outputCache.size() < m_outputCacheSize)
             {
                 ImGui::ImMat mixedFrame;
-                vector<CorrelativeFrame> frames;
-                frames.reserve(m_tracks.size()*7);
-                frames.push_back({CorrelativeFrame::PHASE_AFTER_MIXING, 0, 0, mixedFrame});
-                double timestamp = 0;
+                list<VideoTrack::Holder> tracks;
                 {
                     lock_guard<recursive_mutex> trackLk(m_trackLock);
-                    auto trackIter = m_tracks.begin();
-                    bool isFirstTrack = true;
-                    while (trackIter != m_tracks.end())
-                    {
-                        auto hTrack = *trackIter++;
-                        if (!hTrack->IsVisible())
-                        {
-                            hTrack->SkipOneFrame();
-                            continue;
-                        }
-
-                        ImGui::ImMat vmat;
-                        hTrack->ReadVideoFrame(frames, vmat);
-                        if (!vmat.empty())
-                        {
-                            if (mixedFrame.empty())
-                                mixedFrame = vmat;
-                            else
-                                mixedFrame = m_hMixBlender->Blend(vmat, mixedFrame);
-                        }
-                        if (isFirstTrack)
-                            timestamp = vmat.time_stamp;
-                        else if (timestamp != vmat.time_stamp)
-                            m_logger->Log(WARN) << "'vmat' got from non-1st track has DIFFERENT TIMESTAMP against the 1st track! "
-                                << timestamp << " != " << vmat.time_stamp << "." << endl;
-                    }
+                    tracks = m_tracks;
                 }
+                vector<CorrelativeFrame> frames;
+                frames.reserve(tracks.size()*7);
+                frames.push_back({CorrelativeFrame::PHASE_AFTER_MIXING, 0, 0, mixedFrame});
+                double timestamp = 0;
+                auto trackIter = tracks.begin();
+                bool isFirstTrack = true;
+                while (trackIter != tracks.end())
+                {
+                    auto hTrack = *trackIter++;
+                    if (!hTrack->IsVisible())
+                    {
+                        hTrack->SkipOneFrame();
+                        continue;
+                    }
+
+                    ImGui::ImMat vmat;
+                    hTrack->ReadVideoFrame(frames, vmat);
+                    if (!vmat.empty())
+                    {
+                        if (mixedFrame.empty())
+                            mixedFrame = vmat;
+                        else
+                            mixedFrame = m_hMixBlender->Blend(vmat, mixedFrame);
+                    }
+                    if (isFirstTrack)
+                        timestamp = vmat.time_stamp;
+                    else if (timestamp != vmat.time_stamp)
+                        m_logger->Log(WARN) << "'vmat' got from non-1st track has DIFFERENT TIMESTAMP against the 1st track! "
+                            << timestamp << " != " << vmat.time_stamp << "." << endl;
+                }
+
                 if (mixedFrame.empty())
                 {
                     mixedFrame.create_type(m_outWidth, m_outHeight, 4, IM_DT_INT8);
