@@ -599,7 +599,8 @@ public:
 
         UpdateDuration();
 
-        SeekTo(ReadPos(), async);
+        int64_t currPos = m_inSeekingState ? m_seekPos : ReadPos();
+        SeekTo(currPos, async);
         return true;
     }
 
@@ -689,7 +690,7 @@ public:
 
     int64_t ReadPos() const override
     {
-        return (int64_t)((double)m_readFrameIdx*1000*m_frameRate.den/m_frameRate.num);
+        return m_readFrameIdx*1000*m_frameRate.den/m_frameRate.num;
     }
 
     SubtitleTrackHolder BuildSubtitleTrackFromFile(int64_t id, const string& url, int64_t insertAfterId) override
