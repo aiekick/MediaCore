@@ -74,7 +74,7 @@ public:
         // update overlap
         UpdateClipOverlap(hClip);
         // call 'SeekTo()' to update iterators
-        const int64_t readPos = (int64_t)((double)m_readFrames*1000*m_frameRate.den/m_frameRate.num);
+        const int64_t readPos = m_readFrames*1000*m_frameRate.den/m_frameRate.num;
         SeekTo(readPos);
     }
 
@@ -101,7 +101,7 @@ public:
         // update overlap
         UpdateClipOverlap(hClip);
         // call 'SeekTo()' to update iterators
-        const int64_t readPos = (int64_t)((double)m_readFrames*1000*m_frameRate.den/m_frameRate.num);
+        const int64_t readPos = m_readFrames*1000*m_frameRate.den/m_frameRate.num;
         SeekTo(readPos);
     }
 
@@ -158,7 +158,7 @@ public:
         // update overlap
         UpdateClipOverlap(hClip);
         // call 'SeekTo()' to update iterators
-        const int64_t readPos = (int64_t)((double)m_readFrames*1000*m_frameRate.den/m_frameRate.num);
+        const int64_t readPos = m_readFrames*1000*m_frameRate.den/m_frameRate.num;
         SeekTo(readPos);
     }
 
@@ -176,7 +176,7 @@ public:
         hClip->SetTrackId(-1);
         UpdateClipOverlap(hClip, true);
         // call 'SeekTo()' to update iterators
-        const int64_t readPos = (int64_t)((double)m_readFrames*1000*m_frameRate.den/m_frameRate.num);
+        const int64_t readPos = m_readFrames*1000*m_frameRate.den/m_frameRate.num;
         SeekTo(readPos);
 
         if (m_clips.empty())
@@ -206,7 +206,7 @@ public:
         hClip->SetTrackId(-1);
         UpdateClipOverlap(hClip, true);
         // call 'SeekTo()' to update iterators
-        const int64_t readPos = (int64_t)((double)m_readFrames*1000*m_frameRate.den/m_frameRate.num);
+        const int64_t readPos = m_readFrames*1000*m_frameRate.den/m_frameRate.num;
         SeekTo(readPos);
 
         if (m_clips.empty())
@@ -276,7 +276,7 @@ public:
 
     int64_t ReadPos() const override
     {
-        return (int64_t)((double)m_readFrames*1000*m_frameRate.den/m_frameRate.num);
+        return m_readFrames*1000*m_frameRate.den/m_frameRate.num;
     }
 
     bool Direction() const override
@@ -382,7 +382,7 @@ public:
     {
         lock_guard<recursive_mutex> lk(m_apiLock);
 
-        const int64_t readPos = (int64_t)((double)m_readFrames*1000*m_frameRate.den/m_frameRate.num);
+        const int64_t readPos = m_readFrames*1000*m_frameRate.den/m_frameRate.num;
         for (auto& clip : m_clips)
             clip->NotifyReadPos(readPos-clip->Start());
 

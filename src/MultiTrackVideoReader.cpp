@@ -923,7 +923,7 @@ private:
                 vector<CorrelativeFrame> frames;
                 frames.reserve(tracks.size()*7);
                 frames.push_back({CorrelativeFrame::PHASE_AFTER_MIXING, 0, 0, mixedFrame});
-                double timestamp = 0;
+                double timestamp = (double)m_readFrameIdx*m_frameRate.den/m_frameRate.num;
                 auto trackIter = tracks.begin();
                 bool isFirstTrack = true;
                 while (trackIter != tracks.end())
