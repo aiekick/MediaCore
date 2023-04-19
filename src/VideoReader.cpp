@@ -774,6 +774,11 @@ private:
             m_errMsg = oss.str();
             return false;
         }
+        {
+            lock_guard<mutex> lk(m_seekPosLock);
+            if (m_seekPosUpdated)
+                UpdateReadPos(m_readPos);
+        }
 
         m_prepared = true;
         return true;

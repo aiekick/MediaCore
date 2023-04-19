@@ -338,6 +338,11 @@ public:
             if (m_quit)
                 return false;
         }
+        else
+        {
+            lock_guard<mutex> lk(m_outputCacheLock);
+            m_outputCache.clear();
+        }
         return true;
     }
 
@@ -970,7 +975,8 @@ private:
                 if (!afterSeek)
                 {
                     lock_guard<mutex> lk(m_outputCacheLock);
-                    m_outputCache.push_back(frames);
+                    if (!m_inSeekingState)
+                        m_outputCache.push_back(frames);
                     m_seekingFlash = frames;
                     idleLoop = false;
                 }
